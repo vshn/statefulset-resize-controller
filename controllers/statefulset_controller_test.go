@@ -326,7 +326,6 @@ var _ = Describe("filterResizablePVCs", func() {
 	for k, tc := range tcs {
 		tc := tc // necessary because Ginkgo weirdness
 		It(k, func() {
-			ctx := context.Background()
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{Name: tc.sts.name, Namespace: tc.sts.namespace},
 				Spec: appsv1.StatefulSetSpec{
@@ -367,12 +366,114 @@ var _ = Describe("filterResizablePVCs", func() {
 				})
 			}
 
-			rps := filterResizablePVCs(ctx, sts, pvcs)
+			rps := filterResizablePVCs(sts, pvcs)
 			Expect(rps).To(HaveLen(len(tc.out)))
 			for _, r := range rps {
 				_, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.Name)]
 				Expect(ok).To(BeTrue())
 			}
+		})
+	}
+})
+
+var _ = Describe("scaledown", func() {
+	type state struct {
+		replicas          int32
+		annotationState   string
+		annotationReplica string
+		statusReplicas    int32
+	}
+	type tCase struct {
+		in   state
+		out  state
+		done bool
+	}
+	tcs := map[string]tCase{
+		"should scale down and wait": {
+			in: state{
+				replicas:       6,
+				statusReplicas: 5,
+			},
+			out: state{
+				replicas:          0,
+				statusReplicas:    5,
+				annotationState:   stateScaledown,
+				annotationReplica: "6",
+			},
+			done: false,
+		},
+		"should scale down and wait, even if zero replicas running": {
+			in: state{
+				replicas:       2,
+				statusReplicas: 0,
+			},
+			out: state{
+				replicas:          0,
+				statusReplicas:    0,
+				annotationState:   stateScaledown,
+				annotationReplica: "2",
+			},
+			done: false,
+		},
+		"should keep waiting": {
+			in: state{
+				replicas:          0,
+				statusReplicas:    2,
+				annotationState:   stateScaledown,
+				annotationReplica: "4",
+			},
+			out: state{
+				replicas:          0,
+				statusReplicas:    2,
+				annotationState:   stateScaledown,
+				annotationReplica: "4",
+			},
+			done: false,
+		},
+		"should should proceed": {
+			in: state{
+				replicas:          0,
+				statusReplicas:    0,
+				annotationState:   stateScaledown,
+				annotationReplica: "4",
+			},
+			out: state{
+				replicas:          0,
+				statusReplicas:    0,
+				annotationState:   stateBackup,
+				annotationReplica: "4",
+			},
+			done: true,
+		},
+	}
+	for k, tc := range tcs {
+		tc := tc // necessary because Ginkgo weirdness
+		It(k, func() {
+			sts := appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						stateAnnotation:    tc.in.annotationState,
+						replicasAnnotation: tc.in.annotationReplica,
+					},
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: &tc.in.replicas,
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas: tc.in.statusReplicas,
+				},
+			}
+
+			sts, err := scaleDown(sts)
+			if tc.done {
+				Expect(err).Should(Succeed())
+			} else {
+				Expect(err).To(MatchError(errInProgress))
+			}
+			Expect(*sts.Spec.Replicas).To(Equal(tc.out.replicas), "replicas")
+			Expect(sts.Status.Replicas).To(Equal(tc.out.statusReplicas), "status replicas")
+			Expect(sts.Annotations[stateAnnotation]).To(Equal(tc.out.annotationState), "state annotation")
+			Expect(sts.Annotations[replicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
 		})
 	}
 })

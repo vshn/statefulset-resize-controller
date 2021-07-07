@@ -27,6 +27,9 @@ const (
 	stateBackup    = "backup"
 	stateResize    = "resize"
 )
+const replicasAnnotation = "sts-resize.appuio.ch/replicas"
+
+var errInProgress = errors.New("in progress")
 
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get;update;patch
@@ -47,7 +50,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		l.Error(err, "unable to list pvcs")
 		return ctrl.Result{}, err
 	}
-	rps := filterResizablePVCs(ctx, sts, pvcs.Items)
+	rps := filterResizablePVCs(sts, pvcs.Items)
 
 	// Check if we are resizing this StS (have a state)
 	// If we do
@@ -55,18 +58,17 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if !ok && len(rps) > 0 {
 		// There are resizable PVCs.
 		state = stateScaledown
-		sts.Annotations[stateAnnotation] = state
 	}
 
 	// TODO(glrf) We shoud somehow fallthrough if we can continue
 	var err error
 	switch state {
 	case stateScaledown:
-		sts, err = r.ScaleDown(ctx, sts)
+		sts, err = scaleDown(sts)
 	case stateBackup:
-		sts, err = r.Backup(ctx, sts, rps)
+		sts, err = r.backup(ctx, sts, rps)
 	case stateResize:
-		sts, err = r.Resize(ctx, sts, pvcs.Items)
+		sts, err = r.resize(ctx, sts, pvcs.Items)
 	default:
 	}
 	// TODO(glrf) Handle StS update
@@ -75,7 +77,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // filterResizablePVCs filters out the PVCs that do not match the request of the statefulset
-func filterResizablePVCs(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []corev1.PersistentVolumeClaim {
+func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []corev1.PersistentVolumeClaim {
 	// StS managed PVCs are created according to the VolumeClaimTemplate.
 	// The name of the resulting PVC will be in the following format
 	// <template.name>-<sts.name>-<ordinal-number>
@@ -110,22 +112,31 @@ func filterResizablePVCs(ctx context.Context, sts appsv1.StatefulSet, pvcs []cor
 	return res
 }
 
-// ScaleDown will scale the StatefulSet and requeue the request with a backoff.
+// scaleDown will scale the StatefulSet and requeue the request with a backoff.
 // When the StS sucessfully scaled down to 0, it will advance to the next state `backup`
-func (r *StatefulSetReconciler) ScaleDown(ctx context.Context, sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
-	// TODO(glrf) store the original number of replicas.
-	return sts, errors.New("not implemented")
+func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
+	if *sts.Spec.Replicas == 0 && sts.Status.Replicas == 0 {
+		sts.Annotations[stateAnnotation] = stateBackup
+		return sts, nil
+	}
+	sts.Annotations[stateAnnotation] = stateScaledown
+	if sts.Annotations[replicasAnnotation] == "" {
+		sts.Annotations[replicasAnnotation] = strconv.Itoa(int(*sts.Spec.Replicas))
+	}
+	z := int32(0)
+	sts.Spec.Replicas = &z
+	return sts, errInProgress
 }
 
 // Backup will create a copy of all provided pvcs.
 // When all pvcs are backed up successfully, it will advance to the next state `resize`
-func (r *StatefulSetReconciler) Backup(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) (appsv1.StatefulSet, error) {
+func (r *StatefulSetReconciler) backup(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) (appsv1.StatefulSet, error) {
 	return sts, errors.New("not implemented")
 }
 
 // Resize will recreate all PVCs with the new size and copy the content of its backup to the new PVCs.
 // When all pvcs are recreated and their contents restored, it will scale up the statfulset back to it original replicas
-func (r *StatefulSetReconciler) Resize(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) (appsv1.StatefulSet, error) {
+func (r *StatefulSetReconciler) resize(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) (appsv1.StatefulSet, error) {
 	return sts, errors.New("not implemented")
 }
 
