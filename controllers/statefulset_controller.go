@@ -3,6 +3,9 @@ package controllers
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -71,10 +74,40 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{}, err
 }
 
-// FilterResizablePVCs filters out the PVCs that do not match the request of the statefulset
-// TODO(glrf) try to break this
+// filterResizablePVCs filters out the PVCs that do not match the request of the statefulset
 func filterResizablePVCs(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []corev1.PersistentVolumeClaim {
-	return nil
+	// StS managed PVCs are created according to the VolumeClaimTemplate.
+	// The name of the resulting PVC will be in the following format
+	// <template.name>-<sts.name>-<ordinal-number>
+	// This allows us to match the pvcs to the template
+
+	var res []corev1.PersistentVolumeClaim
+
+	for _, pvc := range pvcs {
+		if pvc.Namespace != sts.Namespace {
+			continue
+		}
+		for _, tpl := range sts.Spec.VolumeClaimTemplates {
+			if !strings.HasPrefix(pvc.Name, tpl.Name) {
+				continue
+			}
+			n := strings.TrimPrefix(pvc.Name, fmt.Sprintf("%s-", tpl.Name))
+			if !strings.HasPrefix(n, sts.Name) {
+				continue
+			}
+			n = strings.TrimPrefix(n, fmt.Sprintf("%s-", sts.Name))
+			if _, err := strconv.Atoi(n); err != nil {
+				continue
+			}
+			q := pvc.Spec.Resources.Requests[corev1.ResourceStorage]            // Necessary because pointer receiver
+			if q.Cmp(tpl.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 { // Returns -1 if q < requested size
+				res = append(res, pvc)
+				break
+			}
+		}
+	}
+
+	return res
 }
 
 // ScaleDown will scale the StatefulSet and requeue the request with a backoff.
