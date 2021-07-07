@@ -61,8 +61,9 @@ func main() {
 	}
 
 	if err = (&controllers.StatefulSetReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("statefulset-resize-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StatefulSet")
 		os.Exit(1)

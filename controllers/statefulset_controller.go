@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,7 +21,8 @@ import (
 // StatefulSetReconciler reconciles a StatefulSet object
 type StatefulSetReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 const stateAnnotation = "sts-resize.appuio.ch/state"
@@ -38,11 +42,11 @@ var errInProgress = errors.New("in progress")
 func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx).WithValues("statefulset", req.NamespacedName)
 
-	sts := appsv1.StatefulSet{}
-	if err := r.Get(ctx, req.NamespacedName, &sts); err != nil {
-		l.Error(err, "unable to fetch statefulset")
+	old := appsv1.StatefulSet{}
+	if err := r.Get(ctx, req.NamespacedName, &old); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	sts := *old.DeepCopy()
 	// TODO(glrf) handle edgecase of starting up sts? (Probably is fine as they should never start up with wrong size?)
 	// NOTE(glrf) This will get _all_ PVCs that belonged to the sts. Even the ones not used anymore (i.e. if scaled up and down)
 	pvcs := corev1.PersistentVolumeClaimList{}
@@ -58,6 +62,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if !ok && len(rps) > 0 {
 		// There are resizable PVCs.
 		state = stateScaledown
+		r.Recorder.Event(&sts, "Normal", "ScaleDown", "Scaling down StatefulSet")
 	}
 
 	// TODO(glrf) We shoud somehow fallthrough if we can continue
@@ -71,9 +76,22 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		sts, err = r.resize(ctx, sts, pvcs.Items)
 	default:
 	}
-	// TODO(glrf) Handle StS update
-
-	return ctrl.Result{}, err
+	if err != nil && !errors.Is(err, errInProgress) {
+		return ctrl.Result{}, err
+	}
+	res := ctrl.Result{}
+	if errors.Is(err, errInProgress) {
+		res = ctrl.Result{
+			RequeueAfter: 5 * time.Second,
+		}
+	}
+	if !reflect.DeepEqual(sts.Annotations, old.Annotations) || !reflect.DeepEqual(sts.Spec, old.Spec) {
+		err := r.Client.Update(ctx, &sts)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	return res, nil
 }
 
 // filterResizablePVCs filters out the PVCs that do not match the request of the statefulset
@@ -131,7 +149,13 @@ func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 // Backup will create a copy of all provided pvcs.
 // When all pvcs are backed up successfully, it will advance to the next state `resize`
 func (r *StatefulSetReconciler) backup(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) (appsv1.StatefulSet, error) {
-	return sts, errors.New("not implemented")
+	if *sts.Spec.Replicas != 0 || sts.Status.Replicas != 0 {
+		// Fallback to last state
+		sts.Annotations[stateAnnotation] = stateScaledown
+		return sts, nil
+	}
+	// TODO(glrf) make backup
+	return sts, errInProgress
 }
 
 // Resize will recreate all PVCs with the new size and copy the content of its backup to the new PVCs.
