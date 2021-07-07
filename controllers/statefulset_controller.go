@@ -32,6 +32,7 @@ const (
 	stateResize    = "resize"
 )
 const replicasAnnotation = "sts-resize.appuio.ch/replicas"
+const sizeAnnotation = "sts-resize.appuio.ch/size"
 
 var errInProgress = errors.New("in progress")
 
@@ -95,6 +96,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // filterResizablePVCs filters out the PVCs that do not match the request of the statefulset
+// It will also add the target size as an annotation sts-resize.appuio.ch/size
 func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []corev1.PersistentVolumeClaim {
 	// StS managed PVCs are created according to the VolumeClaimTemplate.
 	// The name of the resulting PVC will be in the following format
@@ -121,6 +123,11 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 			}
 			q := pvc.Spec.Resources.Requests[corev1.ResourceStorage]            // Necessary because pointer receiver
 			if q.Cmp(tpl.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 { // Returns -1 if q < requested size
+				s := tpl.Spec.Resources.Requests[corev1.ResourceStorage]
+				if pvc.Annotations == nil {
+					pvc.Annotations = map[string]string{}
+				}
+				pvc.Annotations[sizeAnnotation] = s.String()
 				res = append(res, pvc)
 				break
 			}

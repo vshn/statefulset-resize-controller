@@ -116,7 +116,7 @@ var _ = Describe("filterResizablePVCs", func() {
 	type tCase struct {
 		sts  stsIn
 		pvcs []pvcIn
-		out  map[string]struct{}
+		out  map[string]string
 	}
 
 	tcs := map[string]tCase{
@@ -143,7 +143,7 @@ var _ = Describe("filterResizablePVCs", func() {
 					size:      "1G",
 				},
 			},
-			out: map[string]struct{}{},
+			out: map[string]string{},
 		},
 		"finds resizable": {
 			sts: stsIn{
@@ -168,9 +168,9 @@ var _ = Describe("filterResizablePVCs", func() {
 					size:      "1G",
 				},
 			},
-			out: map[string]struct{}{
-				"foo:data-test-0": {},
-				"foo:data-test-1": {},
+			out: map[string]string{
+				"foo:data-test-0": "10G",
+				"foo:data-test-1": "10G",
 			},
 		},
 		"does not find resizable in other namespaces": {
@@ -196,7 +196,7 @@ var _ = Describe("filterResizablePVCs", func() {
 					size:      "1G",
 				},
 			},
-			out: map[string]struct{}{},
+			out: map[string]string{},
 		},
 		"finds multiple resizable": {
 			sts: stsIn{
@@ -235,11 +235,11 @@ var _ = Describe("filterResizablePVCs", func() {
 					size:      "15G",
 				},
 			},
-			out: map[string]struct{}{
-				"foo:data-test-0": {},
-				"foo:data-test-1": {},
-				"foo:log-test-0":  {},
-				"foo:log-test-1":  {},
+			out: map[string]string{
+				"foo:data-test-0": "10G",
+				"foo:data-test-1": "10G",
+				"foo:log-test-0":  "100G",
+				"foo:log-test-1":  "100G",
 			},
 		},
 		"filters out name colisions": {
@@ -279,9 +279,9 @@ var _ = Describe("filterResizablePVCs", func() {
 					size:      "10G",
 				},
 			},
-			out: map[string]struct{}{
-				"foo:data-test-0": {},
-				"foo:data-test-1": {},
+			out: map[string]string{
+				"foo:data-test-0": "10G",
+				"foo:data-test-1": "10G",
 			},
 		},
 		"filters out unrelated PVCs": {
@@ -316,9 +316,9 @@ var _ = Describe("filterResizablePVCs", func() {
 					size:      "10G",
 				},
 			},
-			out: map[string]struct{}{
-				"foo:data-test-0": {},
-				"foo:data-test-1": {},
+			out: map[string]string{
+				"foo:data-test-0": "10G",
+				"foo:data-test-1": "10G",
 			},
 		},
 	}
@@ -369,8 +369,9 @@ var _ = Describe("filterResizablePVCs", func() {
 			rps := filterResizablePVCs(sts, pvcs)
 			Expect(rps).To(HaveLen(len(tc.out)))
 			for _, r := range rps {
-				_, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.Name)]
+				v, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.Name)]
 				Expect(ok).To(BeTrue())
+				Expect(r.Annotations[sizeAnnotation]).To(Equal(v))
 			}
 		})
 	}
