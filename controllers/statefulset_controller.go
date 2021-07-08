@@ -10,7 +10,11 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -24,6 +28,8 @@ type StatefulSetReconciler struct {
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 }
+
+const managedLabel = "sts-resize.appuio.ch/managed"
 
 const stateAnnotation = "sts-resize.appuio.ch/state"
 const (
@@ -74,7 +80,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	case stateBackup:
 		sts, err = r.backup(ctx, sts, rps)
 	case stateResize:
-		sts, err = r.resize(ctx, sts, pvcs.Items)
+		sts, err = r.resize(ctx, sts, rps)
 	default:
 	}
 	if err != nil && !errors.Is(err, errInProgress) {
@@ -161,14 +167,198 @@ func (r *StatefulSetReconciler) backup(ctx context.Context, sts appsv1.StatefulS
 		sts.Annotations[stateAnnotation] = stateScaledown
 		return sts, nil
 	}
-	// TODO(glrf) make backup
+	sts.Annotations[stateAnnotation] = stateBackup
+	// TODO(glrf) create copy PVC
+	done := true
+	for _, pvc := range pvcs {
+		if err := r.copyPVC(ctx, fmt.Sprintf("%s-backup", pvc.Name), pvc); err != nil && !errors.Is(err, errInProgress) {
+			r.Recorder.Eventf(&sts, "Warning", "BackupFailed", "failed to backup pvc %s", pvc.Name)
+			return sts, err
+		} else if errors.Is(err, errInProgress) {
+			done = false
+		}
+	}
+	if done {
+		sts.Annotations[stateAnnotation] = stateResize
+		return sts, nil
+	}
 	return sts, errInProgress
+}
+
+func (r *StatefulSetReconciler) copyPVC(ctx context.Context, name string, pvc corev1.PersistentVolumeClaim,
+	fs ...func(corev1.PersistentVolumeClaim) corev1.PersistentVolumeClaim) error {
+	dest := corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: pvc.Namespace,
+			Labels: map[string]string{
+				managedLabel: "true",
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      pvc.Spec.AccessModes,
+			Resources:        pvc.Spec.Resources,
+			StorageClassName: pvc.Spec.StorageClassName,
+			VolumeMode:       pvc.Spec.VolumeMode,
+		},
+	}
+
+	for _, f := range fs {
+		dest = f(dest)
+	}
+	fpvc := corev1.PersistentVolumeClaim{}
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(&dest), &fpvc)
+	if err != nil && !apierrors.IsNotFound(err) {
+		r.Recorder.Event(&pvc, "Warning", "CopyFailed", "failed to copy pvc")
+		return err
+	} else if apierrors.IsNotFound(err) {
+		if err := r.Client.Create(ctx, &dest); err != nil {
+			r.Recorder.Event(&pvc, "Warning", "CopyFailed", "failed to copy pvc")
+			return err
+		}
+		r.Recorder.Eventf(&pvc, "Normal", "Copy", "copying pvc to %s", dest.Name)
+	} else {
+		// TODO(glrf) Sanity checks! We don't want a left over PVC that is not large enough etc!
+		dest = fpvc
+	}
+
+	job := batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: pvc.Namespace,
+			Labels: map[string]string{
+				managedLabel: "true",
+			},
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:    "sync",
+							Image:   "instrumentisto/rsync-ssh",
+							Command: []string{"rsync", "-avhWHAX", "--no-compress", "--progress", "/src/", "/dst/"},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									MountPath: "/src",
+									Name:      "src",
+								},
+								{
+									MountPath: "/dst",
+									Name:      "dst",
+								},
+							},
+						},
+					},
+					RestartPolicy: corev1.RestartPolicyOnFailure,
+					Volumes: []corev1.Volume{
+						{
+							Name: "src",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvc.Name,
+									ReadOnly:  false,
+								},
+							},
+						},
+						{
+							Name: "dst",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dest.Name,
+									ReadOnly:  false,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	fjob := batchv1.Job{}
+	err = r.Client.Get(ctx, client.ObjectKeyFromObject(&job), &fjob)
+	if err != nil && !apierrors.IsNotFound(err) {
+		r.Recorder.Event(&pvc, "Warning", "CopyFailed", "failed to copy pvc")
+		return err
+	} else if apierrors.IsNotFound(err) {
+		if err := r.Client.Create(ctx, &job); err != nil {
+			r.Recorder.Event(&pvc, "Warning", "CopyFailed", "failed to copy pvc")
+			return err
+		}
+		r.Recorder.Eventf(&pvc, "Normal", "CopyJob", "starting copy job %s", job.Name)
+	} else {
+		// TODO(glrf) Sanity checks!
+		job = fjob
+	}
+
+	//TODO(glrf) Handle Failure!
+	if job.Status.Succeeded > 0 {
+		// We are done with this. Let's clean up the Job
+		pol := metav1.DeletePropagationBackground
+		return r.Client.Delete(ctx, &job, &client.DeleteOptions{
+			PropagationPolicy: &pol,
+		})
+	}
+
+	return errInProgress
 }
 
 // Resize will recreate all PVCs with the new size and copy the content of its backup to the new PVCs.
 // When all pvcs are recreated and their contents restored, it will scale up the statfulset back to it original replicas
 func (r *StatefulSetReconciler) resize(ctx context.Context, sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) (appsv1.StatefulSet, error) {
-	return sts, errors.New("not implemented")
+	if *sts.Spec.Replicas != 0 || sts.Status.Replicas != 0 {
+		// Fallback
+		sts.Annotations[stateAnnotation] = stateScaledown
+		return sts, nil
+	}
+	sts.Annotations[stateAnnotation] = stateResize
+	backups := []corev1.PersistentVolumeClaim{}
+	for _, pvc := range pvcs {
+		jobName := fmt.Sprintf("%s-backup", pvc.Name) // TODO(glrf) We need a unique job name!
+
+		b := corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobName,
+				Namespace: pvc.Namespace,
+			},
+		}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(&b), &b); err != nil {
+			sts.Annotations[stateAnnotation] = stateScaledown
+			return sts, nil
+		}
+		backups = append(backups, b)
+	}
+
+	done := true
+	for i, pvc := range pvcs {
+		if err := r.Client.Delete(ctx, &pvc); err != nil {
+			r.Recorder.Eventf(&sts, "Warning", "ResizeFailed", "failed to resize pvc %s", pvc.Name)
+			return sts, err
+		}
+		f := func(p corev1.PersistentVolumeClaim) corev1.PersistentVolumeClaim {
+			p.Name = pvc.Name
+			p.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse(pvc.Annotations[sizeAnnotation])
+			return p
+		}
+		if err := r.copyPVC(ctx, fmt.Sprintf("%s-resize", pvc.Name), backups[i], f); err != nil && !errors.Is(err, errInProgress) {
+			r.Recorder.Eventf(&sts, "Warning", "ResizeFailed", "failed to size pvc %s", pvc.Name)
+			return sts, err
+		} else if errors.Is(err, errInProgress) {
+			done = false
+		}
+	}
+	if done {
+		sts.Annotations[stateAnnotation] = ""
+		rep, err := strconv.Atoi(sts.Annotations[replicasAnnotation])
+		if err != nil {
+			r.Recorder.Eventf(&sts, "Warning", "ResizeFailed", "Unable to scale up StatefulSet")
+			return sts, nil
+		}
+		r32 := int32(rep)
+		sts.Spec.Replicas = &r32
+		return sts, nil
+	}
+	return sts, errInProgress
 }
 
 // SetupWithManager sets up the controller with the Manager.
