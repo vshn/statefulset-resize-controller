@@ -369,9 +369,8 @@ var _ = Describe("filterResizablePVCs", func() {
 			rps := filterResizablePVCs(sts, pvcs)
 			Expect(rps).To(HaveLen(len(tc.out)))
 			for _, r := range rps {
-				v, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.Name)]
+				_, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.Name)]
 				Expect(ok).To(BeTrue())
-				Expect(r.Annotations[sizeAnnotation]).To(Equal(v))
 			}
 		})
 	}
@@ -398,7 +397,6 @@ var _ = Describe("scaledown", func() {
 			out: state{
 				replicas:          0,
 				statusReplicas:    5,
-				annotationState:   stateScaledown,
 				annotationReplica: "6",
 			},
 			done: false,
@@ -411,7 +409,6 @@ var _ = Describe("scaledown", func() {
 			out: state{
 				replicas:          0,
 				statusReplicas:    0,
-				annotationState:   stateScaledown,
 				annotationReplica: "2",
 			},
 			done: false,
@@ -420,13 +417,11 @@ var _ = Describe("scaledown", func() {
 			in: state{
 				replicas:          0,
 				statusReplicas:    2,
-				annotationState:   stateScaledown,
 				annotationReplica: "4",
 			},
 			out: state{
 				replicas:          0,
 				statusReplicas:    2,
-				annotationState:   stateScaledown,
 				annotationReplica: "4",
 			},
 			done: false,
@@ -435,13 +430,11 @@ var _ = Describe("scaledown", func() {
 			in: state{
 				replicas:          0,
 				statusReplicas:    0,
-				annotationState:   stateScaledown,
 				annotationReplica: "4",
 			},
 			out: state{
 				replicas:          0,
 				statusReplicas:    0,
-				annotationState:   stateBackup,
 				annotationReplica: "4",
 			},
 			done: true,
@@ -453,7 +446,6 @@ var _ = Describe("scaledown", func() {
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						stateAnnotation:    tc.in.annotationState,
 						replicasAnnotation: tc.in.annotationReplica,
 					},
 				},
@@ -473,7 +465,6 @@ var _ = Describe("scaledown", func() {
 			}
 			Expect(*sts.Spec.Replicas).To(Equal(tc.out.replicas), "replicas")
 			Expect(sts.Status.Replicas).To(Equal(tc.out.statusReplicas), "status replicas")
-			Expect(sts.Annotations[stateAnnotation]).To(Equal(tc.out.annotationState), "state annotation")
 			Expect(sts.Annotations[replicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
 		})
 	}
