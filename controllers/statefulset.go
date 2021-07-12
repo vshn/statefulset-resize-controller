@@ -19,6 +19,8 @@ func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 	if *sts.Spec.Replicas == 0 && sts.Status.Replicas == 0 {
 		return sts, nil
 	}
+	// If we are in the process of scaling up. We do not need to scale down
+	//
 	if sts.Annotations[scalupAnnotation] == "true" {
 		return sts, nil
 	}
@@ -45,6 +47,7 @@ func scaleUp(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 
 	if *sts.Spec.Replicas == scale32 && sts.Status.Replicas == scale32 {
 		delete(sts.Annotations, replicasAnnotation)
+		delete(sts.Annotations, scalupAnnotation)
 		return sts, nil
 	}
 	sts.Spec.Replicas = &scale32

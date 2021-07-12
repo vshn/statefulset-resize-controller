@@ -69,7 +69,6 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	res := ctrl.Result{}
 	sts, err = r.resize(ctx, sts, pvcs)
 	if errors.Is(err, errInProgress) {
-		l.V(0).Error(err, "In Progress")
 		res = ctrl.Result{
 			RequeueAfter: 5 * time.Second,
 		}
