@@ -20,6 +20,8 @@ type StatefulSetReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+
+	SyncContainerImage string
 }
 
 const sizeAnnotation = "sts-resize.appuio.ch/size"
@@ -96,10 +98,6 @@ func (r *StatefulSetReconciler) resize(ctx context.Context, sts appsv1.StatefulS
 	if err != nil {
 		return sts, err
 	}
-	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	// TODO(glrf) THIS IS BROKEN! The pvc do no have to be completed as the same time. This will loop as restorePVC
-	// is not idepotent.
-	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	done := true
 	for _, pvc := range pvcs {
 		l := log.FromContext(ctx).WithValues("pvc", pvc.Name)

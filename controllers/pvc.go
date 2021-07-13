@@ -138,6 +138,10 @@ func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error
 	if err != nil {
 		return err
 	}
+	if backup.Annotations == nil {
+		// This should generally not happen, but let's better not panic if it does
+		backup.Annotations = map[string]string{}
+	}
 	backup.Annotations[doneAnnotation] = "true"
 	return r.Update(ctx, &backup)
 }
@@ -161,39 +165,40 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 			VolumeMode:       pi.Spec.VolumeMode,
 		},
 	}
-	recreate := false // If we need to recreate the original PVC as it is too small
+
 	err := r.Get(ctx, client.ObjectKey{Name: pi.Name, Namespace: pi.Namespace}, &found)
 	if err != nil && apierrors.IsNotFound(err) {
-		// The PVC does not exist. We probably crashed while recreating it.
-		// Let's try again.
-		recreate = true
+		// The PVC does not exist.
+		// Let's recreate it with the target size
+		if err := r.Create(ctx, &pvc); err != nil {
+			return err
+		}
 	} else if err != nil {
 		return err
 	} else {
-		pvc = found
 		// There still is a pvc. Check if it it already large enough.
 		// If not delete and receate it
 		q := found.Spec.Resources.Requests[corev1.ResourceStorage]
 		if q.Cmp(pi.TargetSize) < 0 {
-			if err := r.Delete(ctx, &pvc); err != nil {
+			if err := r.Delete(ctx, &found); err != nil {
 				return err
 			}
-			recreate = true
-		} else {
-			if pvc.Annotations[doneAnnotation] == "true" {
-				return nil
-			}
+			// The delete might take a while to take effect.
+			// Let's backoff to avoid a race condition.
+			return errInProgress
+		}
+		if found.Annotations[doneAnnotation] == "true" {
+			return nil
 		}
 	}
 
-	if recreate {
-		if err := r.Create(ctx, &pvc); err != nil {
-			return err
-		}
-	}
 	err = r.copyPVC(ctx, client.ObjectKey{Name: pi.backupName(), Namespace: pi.Namespace}, client.ObjectKey{Name: pi.Name, Namespace: pi.Namespace})
 	if err != nil {
 		return err
+	}
+	if pvc.Annotations == nil {
+		// This should generally not happen, but let's better not panic if it does
+		pvc.Annotations = map[string]string{}
 	}
 	pvc.Annotations[doneAnnotation] = "true"
 	return r.Update(ctx, &pvc)
@@ -218,7 +223,7 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 					Containers: []corev1.Container{
 						{
 							Name:    "sync",
-							Image:   "instrumentisto/rsync-ssh", // TODO(glrf) configurable
+							Image:   r.SyncContainerImage,
 							Command: []string{"rsync", "-avhWHAX", "--no-compress", "--progress", "/src/", "/dst/"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
@@ -271,12 +276,15 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 	}
 
 	//TODO(glrf) Handle Failure!
+
 	if job.Status.Succeeded > 0 {
 		// We are done with this. Let's clean up the Job
+		// If we don't we won't be able to mount it in the next step
 		pol := metav1.DeletePropagationForeground
-		return r.Client.Delete(ctx, &job, &client.DeleteOptions{
+		err := r.Client.Delete(ctx, &job, &client.DeleteOptions{
 			PropagationPolicy: &pol,
 		})
+		return err
 	}
 
 	return errInProgress
