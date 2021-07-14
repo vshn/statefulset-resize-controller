@@ -101,7 +101,16 @@ func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvcInfo) error
 }
 
 func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error {
-	// Create backup destination if not exists
+	// Check if the original PVC still exists. If not there is a problem
+	original := corev1.PersistentVolumeClaim{}
+	if err := r.Get(ctx, client.ObjectKey{Name: pi.Name, Namespace: pi.Namespace}, &original); err != nil {
+		if apierrors.IsNotFound(err) {
+			// If its not present we are in an inconsitent state
+			return newErrCritical("original pvc missing while trying to back it up")
+		}
+		return err
+	}
+
 	found := corev1.PersistentVolumeClaim{}
 	backup := corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -118,6 +127,7 @@ func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error
 			VolumeMode:       pi.Spec.VolumeMode,
 		},
 	}
+	// Create backup destination if not exists
 	if err := r.Get(ctx, client.ObjectKey{Name: pi.backupName(), Namespace: pi.Namespace}, &found); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return err
@@ -127,14 +137,25 @@ func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error
 			}
 		}
 	} else {
+		// It already exists.
+		// We either are in progress of copying or we are done.
 		backup = found
 		if backup.Annotations[doneAnnotation] == "true" {
+			// We ran successfully before
 			return nil
 		}
 	}
-	// TODO(glrf) Do we need sanity checks? If someone creates a data-test-0-backup-4G that is only a gigabit large this will fail..
+	q := backup.Spec.Resources.Requests[corev1.ResourceStorage]              // Necessary because pointer receiver
+	if q.Cmp(original.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 { // Returns -1 if q < size of original
+		return newErrAbort(fmt.Sprintf("existing backup %s too small", backup.Name))
+	}
 
 	err := r.copyPVC(ctx, client.ObjectKey{Name: pi.Name, Namespace: pi.Namespace}, client.ObjectKey{Name: pi.backupName(), Namespace: pi.Namespace})
+	if errors.Is(err, errCritical) {
+		// Critical errors in this stage can be aborted
+		err := errors.Unwrap(err)
+		return newErrAbort(err.Error())
+	}
 	if err != nil {
 		return err
 	}
@@ -142,11 +163,22 @@ func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error
 		// This should generally not happen, but let's better not panic if it does
 		backup.Annotations = map[string]string{}
 	}
+	// We ran successfully
 	backup.Annotations[doneAnnotation] = "true"
 	return r.Update(ctx, &backup)
 }
 
 func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) error {
+	// Check if the backup we want to restore from actually exists
+	backupMissing := false
+	backup := corev1.PersistentVolumeClaim{}
+	if err := r.Get(ctx, client.ObjectKey{Name: pi.backupName(), Namespace: pi.Namespace}, &backup); err != nil {
+		if !apierrors.IsNotFound(err) {
+			// If its not present we are in an inconsitent state
+			return err
+		}
+		backupMissing = true
+	}
 	found := corev1.PersistentVolumeClaim{}
 	pvc := corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -169,6 +201,10 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 	err := r.Get(ctx, client.ObjectKey{Name: pi.Name, Namespace: pi.Namespace}, &found)
 	if err != nil && apierrors.IsNotFound(err) {
 		// The PVC does not exist.
+		if backupMissing {
+			// backup and original is missing
+			return newErrCritical(fmt.Sprintf("backup %s and original %s missing, state inconsitent", pi.backupName(), pi.Name))
+		}
 		// Let's recreate it with the target size
 		if err := r.Create(ctx, &pvc); err != nil {
 			return err
@@ -176,7 +212,12 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 	} else if err != nil {
 		return err
 	} else {
-		// There still is a pvc. Check if it it already large enough.
+		// There still is a pvc.
+		if backupMissing {
+			// backup is missing but the original is here. Abort
+			return newErrAbort(fmt.Sprintf("backup %s missing, state inconsitent", pi.backupName()))
+		}
+		//Check if it it already large enough.
 		// If not delete and receate it
 		q := found.Spec.Resources.Requests[corev1.ResourceStorage]
 		if q.Cmp(pi.TargetSize) < 0 {
@@ -206,7 +247,7 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 
 func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKey, dst client.ObjectKey) error {
 	if src.Namespace != dst.Namespace {
-		return errors.New("unable to copy across namespaces")
+		return newErrCritical("unable to copy across namespaces")
 	}
 	name := fmt.Sprintf("sync-%s-to-%s", src.Name, dst.Name)
 	job := batchv1.Job{
@@ -275,9 +316,13 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 		job = fjob
 	}
 
-	//TODO(glrf) Handle Failure!
-
-	if job.Status.Succeeded > 0 {
+	stat := getJobStatus(job)
+	if stat == nil {
+		// Job still running
+		return errInProgress
+	}
+	switch *stat {
+	case batchv1.JobComplete:
 		// We are done with this. Let's clean up the Job
 		// If we don't we won't be able to mount it in the next step
 		pol := metav1.DeletePropagationForeground
@@ -285,7 +330,18 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 			PropagationPolicy: &pol,
 		})
 		return err
+	case batchv1.JobFailed:
+		return newErrCritical(fmt.Sprintf("job %s failed", job.Name))
+	default:
+		return newErrCritical(fmt.Sprintf("job %s in unknown state", job.Name))
 	}
+}
 
-	return errInProgress
+func getJobStatus(job batchv1.Job) *batchv1.JobConditionType {
+	for _, cond := range job.Status.Conditions {
+		if cond.Type == batchv1.JobComplete || cond.Type == batchv1.JobFailed {
+			return &cond.Type
+		}
+	}
+	return nil
 }

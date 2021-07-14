@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -359,7 +360,7 @@ func newBackup(namespace, name, size string, fs ...func(*corev1.PersistentVolume
 	return pvc
 }
 
-func newJob(namespace string, src, dst client.ObjectKey, image string, fs ...func(*batchv1.Job) *batchv1.Job) *batchv1.Job {
+func newJob(namespace string, src, dst client.ObjectKey, image string, state *batchv1.JobConditionType, fs ...func(*batchv1.Job) *batchv1.Job) *batchv1.Job {
 	name := fmt.Sprintf("sync-%s-to-%s", src.Name, dst.Name)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -419,11 +420,26 @@ func newJob(namespace string, src, dst client.ObjectKey, image string, fs ...fun
 		},
 	}
 
+	if state != nil {
+		cond := batchv1.JobCondition{
+			Type:   *state,
+			Status: corev1.ConditionTrue,
+		}
+		job.Status.Conditions = append(job.Status.Conditions, cond)
+		if *state == batchv1.JobComplete {
+			job.Status.Succeeded = 1
+		}
+	}
+
 	for _, f := range fs {
 		job = f(job)
 	}
 	return job
 }
+
+var jobSucceeded = batchv1.JobComplete
+var jobFailed = batchv1.JobFailed
+
 func BeEquivalentPVC(other *corev1.PersistentVolumeClaim) types.GomegaMatcher {
 	return SatisfyAll(
 		WithTransform(
@@ -478,12 +494,13 @@ var _ = Describe("backupPVC", func() {
 	}
 	type tCase struct {
 		namespace  string
+		pvcInfo    *pvcInfo
 		in         state
 		out        state
 		targetSize string
 		syncImage  string
 		done       bool
-		fail       bool
+		err        error
 	}
 
 	tcs := map[string]tCase{
@@ -499,7 +516,7 @@ var _ = Describe("backupPVC", func() {
 				job: newJob("t1",
 					client.ObjectKey{Namespace: "t1", Name: "test"},
 					client.ObjectKey{Namespace: "t1", Name: "test-backup-1g"},
-					"blub"),
+					"blub", nil),
 			},
 			targetSize: "4G",
 			done:       false,
@@ -513,7 +530,7 @@ var _ = Describe("backupPVC", func() {
 				job: newJob("t2",
 					client.ObjectKey{Namespace: "t1", Name: "test"},
 					client.ObjectKey{Namespace: "t1", Name: "test-backup-1g"},
-					"blub"),
+					"blub", nil),
 			},
 			out: state{
 				source: newSource("t2", "test", "1G"),
@@ -521,7 +538,7 @@ var _ = Describe("backupPVC", func() {
 				job: newJob("t2",
 					client.ObjectKey{Namespace: "t1", Name: "test"},
 					client.ObjectKey{Namespace: "t1", Name: "test-backup-1g"},
-					"blub"),
+					"blub", nil),
 			},
 			targetSize: "4G",
 			done:       false,
@@ -535,11 +552,7 @@ var _ = Describe("backupPVC", func() {
 				job: newJob("t3",
 					client.ObjectKey{Namespace: "t3", Name: "test"},
 					client.ObjectKey{Namespace: "t3", Name: "test-backup-1g"},
-					"blub",
-					func(job *batchv1.Job) *batchv1.Job {
-						job.Status.Succeeded = 1
-						return job
-					}),
+					"blub", &jobSucceeded),
 			},
 			out: state{
 				source: newSource("t3", "test", "1G"),
@@ -562,7 +575,7 @@ var _ = Describe("backupPVC", func() {
 				job: newJob("t4",
 					client.ObjectKey{Namespace: "t4", Name: "test"},
 					client.ObjectKey{Namespace: "t4", Name: "test-backup-1g"},
-					"blub"),
+					"blub", nil),
 			},
 			targetSize: "4G",
 		},
@@ -583,6 +596,48 @@ var _ = Describe("backupPVC", func() {
 			},
 			targetSize: "4G",
 			done:       true,
+		},
+		"critical, if no source is present": {
+			namespace: "f1",
+			syncImage: "blub",
+			pvcInfo: &pvcInfo{
+				Name:      "test",
+				Namespace: "f1",
+				Labels:    newSource("f1", "test", "1G").Labels,
+				Spec:      newSource("f1", "test", "1G").Spec,
+			},
+			in: state{
+				source: nil,
+			},
+			out:        state{},
+			targetSize: "4G",
+			err:        errCritical,
+		},
+		"abort, if too small backup exists": {
+			namespace: "f2",
+			syncImage: "blub",
+			in: state{
+				source: newSource("f2", "test", "2G"),
+				backup: newBackup("f2", "test-backup-2g", "1G"),
+			},
+			out:        state{},
+			targetSize: "4G",
+			err:        errAbort,
+		},
+		"abort, if job failed": {
+			namespace: "f3",
+			syncImage: "blub",
+			in: state{
+				source: newSource("f3", "test", "1G"),
+				backup: newBackup("f3", "test-backup-2g", "1G"),
+				job: newJob("f3",
+					client.ObjectKey{Namespace: "f3", Name: "test"},
+					client.ObjectKey{Namespace: "f3", Name: "test-backup-1g"},
+					"blub", &jobFailed),
+			},
+			out:        state{},
+			targetSize: "4G",
+			err:        errAbort,
 		},
 	}
 
@@ -612,18 +667,24 @@ var _ = Describe("backupPVC", func() {
 				Scheme:             k8sClient.Scheme(),
 				SyncContainerImage: tc.syncImage,
 			}
-			Expect(tc.in.source).NotTo(BeNil())
-			err := r.backupPVC(ctx, pvcInfo{
-				Name:       tc.in.source.Name,
-				Namespace:  tc.in.source.Namespace,
-				Labels:     tc.in.source.Labels,
-				Spec:       tc.in.source.Spec,
-				TargetSize: resource.MustParse(tc.targetSize),
-			})
+			pi := pvcInfo{}
+			if tc.in.source != nil {
+				pi = pvcInfo{
+					Name:      tc.in.source.Name,
+					Namespace: tc.in.source.Namespace,
+					Labels:    tc.in.source.Labels,
+					Spec:      tc.in.source.Spec,
+				}
+			}
+			if tc.pvcInfo != nil {
+				pi = *tc.pvcInfo
+			}
+			pi.TargetSize = resource.MustParse(tc.targetSize)
 
-			if tc.fail {
-				Expect(err).NotTo(Succeed())
-				Expect(err).NotTo(MatchError(errInProgress))
+			err := r.backupPVC(ctx, pi)
+
+			if tc.err != nil {
+				Expect(errors.Is(err, tc.err)).To(BeTrue(), "expect error %v got %v", tc.err, err)
 				return
 			}
 			if !tc.done {
@@ -703,7 +764,7 @@ var _ = Describe("restorePVC", func() {
 		targetSize string
 		syncImage  string
 		done       bool
-		fail       bool
+		err        error
 	}
 
 	tcs := map[string]tCase{
@@ -746,7 +807,7 @@ var _ = Describe("restorePVC", func() {
 				job: newJob("r2",
 					client.ObjectKey{Namespace: "r2", Name: "test-backup-1g"},
 					client.ObjectKey{Namespace: "r2", Name: "test"},
-					"blub"),
+					"blub", nil),
 			},
 			targetSize: "4G",
 			done:       false,
@@ -770,11 +831,7 @@ var _ = Describe("restorePVC", func() {
 				job: newJob("r3",
 					client.ObjectKey{Namespace: "r3", Name: "test-backup-1g"},
 					client.ObjectKey{Namespace: "r3", Name: "test"},
-					"blub",
-					func(job *batchv1.Job) *batchv1.Job {
-						job.Status.Succeeded = 1
-						return job
-					}),
+					"blub", &jobSucceeded),
 			},
 			out: state{
 				source: newSource("r3", "test", "4G",
@@ -810,11 +867,7 @@ var _ = Describe("restorePVC", func() {
 				job: newJob("r4",
 					client.ObjectKey{Namespace: "r4", Name: "test-backup-1g"},
 					client.ObjectKey{Namespace: "r4", Name: "test"},
-					"blub",
-					func(job *batchv1.Job) *batchv1.Job {
-						job.Status.Succeeded = 1
-						return job
-					}),
+					"blub", &jobSucceeded),
 			},
 			targetSize: "4G",
 			done:       false,
@@ -842,6 +895,53 @@ var _ = Describe("restorePVC", func() {
 			},
 			targetSize: "4G",
 			done:       true,
+		},
+		"abort, if backup is not present": {
+			namespace: "fr1",
+			syncImage: "blub",
+			in: state{
+				source: newSource("fr1", "test", "1G"),
+			},
+			targetSize: "4G",
+			err:        errAbort,
+		},
+		"critical, if neither backup nor original is present": {
+			namespace: "fr2",
+			syncImage: "blub",
+			pvcInfo: &pvcInfo{
+				Name:      "test",
+				Namespace: "fr2",
+				Labels:    newSource("fr2", "test", "1G").Labels,
+				Spec:      newSource("fr2", "test", "1G").Spec,
+			},
+			in:         state{},
+			targetSize: "4G",
+			err:        errCritical,
+		},
+		"critical, if job failed": {
+			namespace: "fr3",
+			syncImage: "blub",
+			pvcInfo: &pvcInfo{
+				Name:      "test",
+				Namespace: "fr3",
+				Labels:    newSource("fr3", "test", "1G").Labels,
+				Spec:      newSource("fr3", "test", "1G").Spec,
+			},
+			in: state{
+				source: newSource("fr3", "test", "4G"),
+				backup: newBackup("fr3", "test-backup-1g", "1G",
+					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
+						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						return pvc
+					}),
+				job: newJob("fr3",
+					client.ObjectKey{Namespace: "fr3", Name: "test-backup-1g"},
+					client.ObjectKey{Namespace: "fr3", Name: "test"},
+					"blub", &jobFailed),
+			},
+			out:        state{},
+			targetSize: "4G",
+			err:        errCritical,
 		},
 	}
 
@@ -886,11 +986,11 @@ var _ = Describe("restorePVC", func() {
 			pi.TargetSize = resource.MustParse(tc.targetSize)
 			err := r.restorePVC(ctx, pi)
 
-			if tc.fail {
-				Expect(err).NotTo(Succeed())
-				Expect(err).NotTo(MatchError(errInProgress))
+			if tc.err != nil {
+				Expect(errors.Is(err, tc.err)).To(BeTrue(), "expect error %v got %v", tc.err, err)
 				return
 			}
+
 			if !tc.done {
 				Expect(err).To(MatchError(errInProgress))
 			} else {

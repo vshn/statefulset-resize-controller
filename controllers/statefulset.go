@@ -40,8 +40,7 @@ func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 func scaleUp(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 	scale, err := strconv.Atoi(sts.Annotations[replicasAnnotation])
 	if err != nil {
-		//TODO(glrf) Error not recoverable! Add a way to handle such errors
-		return sts, fmt.Errorf("failed to get original scale: %w", err)
+		return sts, newErrCritical(fmt.Sprintf("failed to get original scale as %s is not readable", replicasAnnotation))
 	}
 	scale32 := int32(scale) // need to add this to be able to dereference the int32 version
 	sts.Annotations[scalupAnnotation] = "true"

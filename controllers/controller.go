@@ -25,21 +25,33 @@ type StatefulSetReconciler struct {
 	SyncContainerImage string
 }
 
+// Label for failed sts resizing that need human interaction
+const failedLabel = "sts-resize.appuio.ch/failed"
+
 // Annotation key in which the initial state of the pvcs is stored in
 const pvcAnnotation = "sts-resize.appuio.ch/pvcs"
 
 // Error to return if reconciliation is running as planed but the caller needs to backoff and retry later
 var errInProgress = errors.New("in progress")
 
-// Potentially recoverable but critical error
+// Error requiring manual recovery
 var errCritical = errors.New("critical")
 
-func newErrCritical(err error) error {
-	return fmt.Errorf("%w: %s", errCritical, err.Error())
+// newErrCritical returns a new critical error.
+// The issue should be descriptive enough that Ops knows what is wrong
+func newErrCritical(issue string) error {
+	return fmt.Errorf("%w: %s", errCritical, issue)
 }
 
-// Unrecoverable error. Will cause the reconciliation to stop
-var errFatal = errors.New("fatal")
+// Unrecoverable error.
+// Will cause the reconciliation to stop, mark the StatefulSet as aborted and scale back
+var errAbort = errors.New("Abort")
+
+// newErrAbort returns a new unrecoverable error.
+// The issue should be descriptive enough that Ops knows what is wrong
+func newErrAbort(issue string) error {
+	return fmt.Errorf("%w: %s", errAbort, issue)
+}
 
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get;update;patch
@@ -65,6 +77,10 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if len(pvcs) == 0 {
 		return ctrl.Result{}, nil
 	}
+	if sts.Labels != nil && sts.Labels[failedLabel] == "true" {
+		// This Sts needs human interaction, we cannot fix this
+		return ctrl.Result{}, nil
+	}
 
 	res := ctrl.Result{}
 	sts, err = r.resize(ctx, sts, pvcs)
@@ -74,23 +90,28 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		res = ctrl.Result{
 			RequeueAfter: 5 * time.Second,
 		}
-	case errors.Is(err, errFatal):
-		// Cannot revcover from this
-		// Log as much as possible
+	case errors.Is(err, errAbort):
+		// Resizing failed and connot be recovered automatically
+		// We can abort and scale up
+		// We potentially ignore a critical error here, but as we already notify ops there is not much else to do
+		sts, _ = scaleUp(sts)
+		fallthrough
+	case errors.Is(err, errCritical):
+		// Something went very wrong.
+		r.Recorder.Event(&sts, "Warning", "ErrorResize", err.Error())
 		l.V(0).Error(err, "Unable to resize PVCs and cannot recover")
-    r.Recorder.Event(&sts, "Warning", "FatalResize", err.Error())
-		return ctrl.Result{}, err
-	case errors.Is(err, errCritical) || err != nil:
-		// Something went wrong.
-		// Let's try again
-    r.Recorder.Event(&sts, "Warning", "ErrorResize", err.Error())
-		l.V(0).Error(err, "Unable to resize PVCs")
-		return ctrl.Result{}, err
+		if sts.Labels == nil {
+			sts.Labels = map[string]string{}
+		}
+		sts.Labels[failedLabel] = "true"
 	case err == nil:
 		// Cleanup annotation with PVCInfo so we do not try to resize again
-    r.Recorder.Event(&sts, "Normal", "ResizeComplete", "Successfully resized StatefulSet")
+		r.Recorder.Event(&sts, "Normal", "ResizeComplete", "Successfully resized StatefulSet")
 		l.V(1).Info("Successfully resized StatefulSet")
 		delete(sts.Annotations, pvcAnnotation)
+	default:
+		l.V(0).Error(err, "Unable to resize PVCs")
+		return ctrl.Result{}, err
 	}
 
 	if !reflect.DeepEqual(sts.Annotations, old.Annotations) || !reflect.DeepEqual(sts.Spec, old.Spec) {
@@ -107,17 +128,17 @@ func (r *StatefulSetReconciler) getPVCInfo(ctx context.Context, sts appsv1.State
 	pis := []pvcInfo{}
 	if sts.Annotations[pvcAnnotation] != "" {
 		if err := json.Unmarshal([]byte(sts.Annotations[pvcAnnotation]), &pis); err != nil {
-			return nil, newErrCritical(err)
+			return nil, newErrCritical(fmt.Sprintf("Annotation %s malformed", pvcAnnotation))
 		}
 		return pis, nil
 	}
 	pis, err := getResizablePVCs(ctx, r, sts)
 	if err != nil {
-		return nil, newErrCritical(err)
+		return nil, err
 	}
 	data, err := json.Marshal(pis)
 	if err != nil {
-		return nil, newErrCritical(err)
+		return nil, err
 	}
 	sts.Annotations[pvcAnnotation] = string(data)
 
