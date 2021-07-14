@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 )
 
+const sizeAnnotation = "sts-resize.appuio.ch/size"
 const replicasAnnotation = "sts-resize.appuio.ch/replicas"
 const scalupAnnotation = "sts-resize.appuio.ch/scalup"
 
