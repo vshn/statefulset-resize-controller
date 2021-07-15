@@ -1,0 +1,22 @@
+version: "2"
+plugins:
+  shellcheck:
+    enabled: true
+  govet:
+    enabled: true
+  gofmt:
+    enabled: true
+  golint:
+    enabled: true
+checks:
+  return-statements:
+    enabled: false
+exclude_patterns:
+  - "testdata/"
+  - "**/vendor/"
+  - "**/*_test.go"
+  - "config/"
+  - '**/spec/'
+  - '**/test/'
+  - '**/tests/'
+  - '**/zz_generated.deepcopy.go'

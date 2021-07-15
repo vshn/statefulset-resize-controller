@@ -1,0 +1,29 @@
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+archives:
+  - format: binary
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Tag }}-next"
+dockers:
+- image_templates:
+  - "quay.io/vshn/statefulset-resize-controller:v{{ .Version }}"
+
+  # For prereleases, updating `latest` and the floating tags of the major
+  # version does not make sense. Only the image for the exact version should
+  # be pushed.
+  - "{{ if not .Prerelease }}quay.io/vshn/statefulset-resize-controller:v{{ .Major }}{{ end }}"
+
+  - "{{ if not .Prerelease }}quay.io/vshn/statefulset-resize-controller:latest{{ end }}"
+release:
+  prerelease: auto
+  github:
+    owner: vshn
+    name: statefulset-resize-controller

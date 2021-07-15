@@ -1,0 +1,5 @@
+bin/
+testbin/
+
+cover.out
+.github/release-notes.md
