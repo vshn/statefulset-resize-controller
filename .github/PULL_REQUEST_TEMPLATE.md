@@ -14,7 +14,7 @@ Remove items that do not apply. For completed items, change [ ] to [x].
 
 - [ ] Keep pull requests small so they can be easily reviewed.
 - [ ] Categorize the PR by setting a good title and adding one of the labels:
-      `bug`, `enhancement`, `documentation`, `change`, `breaking`,
+      `bug`, `enhancement`, `documentation`, `change`, `breaking`, `dependency`
       as they show up in the changelog
 - [ ] Update the documentation.
 - [ ] Update tests.

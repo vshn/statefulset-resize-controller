@@ -3,7 +3,7 @@ all: fmt vet build
 
 .PHONY: build
 build: 
-	go build
+	CGO_ENABLED=0 go build
 
 .PHONY: test
 test:
