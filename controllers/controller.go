@@ -60,6 +60,7 @@ func newErrAbort(issue string) error {
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs/status,verbs=get;update;patch
 
+// Reconcile is the main work loop, reacting to changes in statefulsets and initiating resizing of StatefulSets
 func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx).WithValues("statefulset", req.NamespacedName)
 

@@ -2,8 +2,9 @@ version: "2"
 plugins:
   shellcheck:
     enabled: true
+  #https://github.com/codeclimate-community/codeclimate-govet/issues/25
   govet:
-    enabled: true
+    enabled: false
   gofmt:
     enabled: true
   golint:
