@@ -72,7 +72,7 @@ var _ = Describe("restorePVC", func() {
 			out: state{
 				source: newSource("r2", "test", "4G"),
 				backup: newBackup("r2", "test-backup-1g", "1G"),
-				job: newJob("r2",
+				job: newTestJob("r2",
 					client.ObjectKey{Namespace: "r2", Name: "test-backup-1g"},
 					client.ObjectKey{Namespace: "r2", Name: "test"},
 					"blub", nil),
@@ -96,7 +96,7 @@ var _ = Describe("restorePVC", func() {
 						pvc.Annotations = map[string]string{doneAnnotation: "true"}
 						return pvc
 					}),
-				job: newJob("r3",
+				job: newTestJob("r3",
 					client.ObjectKey{Namespace: "r3", Name: "test-backup-1g"},
 					client.ObjectKey{Namespace: "r3", Name: "test"},
 					"blub", &jobSucceeded),
@@ -132,7 +132,7 @@ var _ = Describe("restorePVC", func() {
 			out: state{
 				source: newSource("r4", "test", "4G"),
 				backup: newBackup("r4", "test-backup-1g", "1G"),
-				job: newJob("r4",
+				job: newTestJob("r4",
 					client.ObjectKey{Namespace: "r4", Name: "test-backup-1g"},
 					client.ObjectKey{Namespace: "r4", Name: "test"},
 					"blub", &jobSucceeded),
@@ -189,7 +189,7 @@ var _ = Describe("restorePVC", func() {
 						pvc.Annotations = map[string]string{doneAnnotation: "true"}
 						return pvc
 					}),
-				job: newJob("fr3",
+				job: newTestJob("fr3",
 					client.ObjectKey{Namespace: "fr3", Name: "test-backup-1g"},
 					client.ObjectKey{Namespace: "fr3", Name: "test"},
 					"blub", &jobFailed),

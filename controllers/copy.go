@@ -15,71 +15,18 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 	if src.Namespace != dst.Namespace {
 		return newErrCritical("unable to copy across namespaces")
 	}
-	name := fmt.Sprintf("sync-%s-to-%s", src.Name, dst.Name)
-	job := batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: src.Namespace,
-			Labels: map[string]string{
-				managedLabel: "true",
-			},
-		},
-		Spec: batchv1.JobSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:    "sync",
-							Image:   r.SyncContainerImage,
-							Command: []string{"rsync", "-avhWHAX", "--no-compress", "--progress", "/src/", "/dst/"},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									MountPath: "/src",
-									Name:      "src",
-								},
-								{
-									MountPath: "/dst",
-									Name:      "dst",
-								},
-							},
-						},
-					},
-					RestartPolicy: corev1.RestartPolicyOnFailure,
-					Volumes: []corev1.Volume{
-						{
-							Name: "src",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: src.Name,
-									ReadOnly:  false,
-								},
-							},
-						},
-						{
-							Name: "dst",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: dst.Name,
-									ReadOnly:  false,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	fjob := batchv1.Job{}
-	err := r.Client.Get(ctx, client.ObjectKeyFromObject(&job), &fjob)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return err
-	} else if apierrors.IsNotFound(err) {
+
+	job := newJob(src.Namespace, r.SyncContainerImage, src.Name, dst.Name)
+	found := batchv1.Job{}
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(&job), &found)
+	if apierrors.IsNotFound(err) {
 		if err := r.Client.Create(ctx, &job); err != nil {
 			return err
 		}
+	} else if err != nil {
+		return err
 	} else {
-		// TODO(glrf) Do we need sanity checks? Mabye this is a different job?
-		job = fjob
+		job = found
 	}
 
 	stat := getJobStatus(job)
@@ -100,6 +47,63 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 		return newErrCritical(fmt.Sprintf("job %s failed", job.Name))
 	default:
 		return newErrCritical(fmt.Sprintf("job %s in unknown state", job.Name))
+	}
+}
+
+func newJob(namespace, image, src, dst string) batchv1.Job {
+	name := fmt.Sprintf("sync-%s-to-%s", src, dst)
+	return batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				managedLabel: "true",
+			},
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:    "sync",
+							Image:   image,
+							Command: []string{"rsync", "-avhWHAX", "--no-compress", "--progress", "/src/", "/dst/"},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									MountPath: "/src",
+									Name:      "src",
+								},
+								{
+									MountPath: "/dst",
+									Name:      "dst",
+								},
+							},
+						},
+					},
+					RestartPolicy: corev1.RestartPolicyOnFailure,
+					Volumes: []corev1.Volume{
+						{
+							Name: "src",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: src,
+									ReadOnly:  false,
+								},
+							},
+						},
+						{
+							Name: "dst",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dst,
+									ReadOnly:  false,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }
 

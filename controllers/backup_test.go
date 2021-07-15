@@ -45,7 +45,7 @@ var _ = Describe("backupPVC", func() {
 			out: state{
 				source: newSource("t1", "test", "1G"),
 				backup: newBackup("t1", "test-backup-1g", "1G"),
-				job: newJob("t1",
+				job: newTestJob("t1",
 					client.ObjectKey{Namespace: "t1", Name: "test"},
 					client.ObjectKey{Namespace: "t1", Name: "test-backup-1g"},
 					"blub", nil),
@@ -59,7 +59,7 @@ var _ = Describe("backupPVC", func() {
 			in: state{
 				source: newSource("t2", "test", "1G"),
 				backup: newBackup("t2", "test-backup-1g", "1G"),
-				job: newJob("t2",
+				job: newTestJob("t2",
 					client.ObjectKey{Namespace: "t1", Name: "test"},
 					client.ObjectKey{Namespace: "t1", Name: "test-backup-1g"},
 					"blub", nil),
@@ -67,7 +67,7 @@ var _ = Describe("backupPVC", func() {
 			out: state{
 				source: newSource("t2", "test", "1G"),
 				backup: newBackup("t2", "test-backup-1g", "1G"),
-				job: newJob("t2",
+				job: newTestJob("t2",
 					client.ObjectKey{Namespace: "t1", Name: "test"},
 					client.ObjectKey{Namespace: "t1", Name: "test-backup-1g"},
 					"blub", nil),
@@ -81,7 +81,7 @@ var _ = Describe("backupPVC", func() {
 			in: state{
 				source: newSource("t3", "test", "1G"),
 				backup: newBackup("t3", "test-backup-1g", "1G"),
-				job: newJob("t3",
+				job: newTestJob("t3",
 					client.ObjectKey{Namespace: "t3", Name: "test"},
 					client.ObjectKey{Namespace: "t3", Name: "test-backup-1g"},
 					"blub", &jobSucceeded),
@@ -104,7 +104,7 @@ var _ = Describe("backupPVC", func() {
 			out: state{
 				source: newSource("t4", "test", "1G"),
 				backup: newBackup("t4", "test-backup-1g", "1G"),
-				job: newJob("t4",
+				job: newTestJob("t4",
 					client.ObjectKey{Namespace: "t4", Name: "test"},
 					client.ObjectKey{Namespace: "t4", Name: "test-backup-1g"},
 					"blub", nil),
@@ -162,7 +162,7 @@ var _ = Describe("backupPVC", func() {
 			in: state{
 				source: newSource("f3", "test", "1G"),
 				backup: newBackup("f3", "test-backup-2g", "1G"),
-				job: newJob("f3",
+				job: newTestJob("f3",
 					client.ObjectKey{Namespace: "f3", Name: "test"},
 					client.ObjectKey{Namespace: "f3", Name: "test-backup-1g"},
 					"blub", &jobFailed),

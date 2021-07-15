@@ -127,7 +127,7 @@ func newBackup(namespace, name, size string, fs ...func(*corev1.PersistentVolume
 	return pvc
 }
 
-func newJob(namespace string, src, dst client.ObjectKey, image string, state *batchv1.JobConditionType, fs ...func(*batchv1.Job) *batchv1.Job) *batchv1.Job {
+func newTestJob(namespace string, src, dst client.ObjectKey, image string, state *batchv1.JobConditionType, fs ...func(*batchv1.Job) *batchv1.Job) *batchv1.Job {
 	name := fmt.Sprintf("sync-%s-to-%s", src.Name, dst.Name)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
