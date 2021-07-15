@@ -1,3 +1,11 @@
+# Set Shell to bash, otherwise some targets fail with dash/zsh etc.
+SHELL := /bin/bash
+
+setup-envtest ?= go run sigs.k8s.io/controller-runtime/tools/setup-envtest
+
+# Run tests (see https://sdk.operatorframework.io/docs/building-operators/golang/references/envtest-setup)
+ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
+
 all: fmt vet build
 
 .PHONY: build
@@ -9,7 +17,12 @@ run: fmt vet ## Run against the configured Kubernetes cluster in ~/.kube/config
 	go run ./main.go
 
 .PHONY: test
-test: fmt vet ## Run tests 
+test: export ENVTEST_K8S_VERSION = 1.19.x
+test: fmt  ## Run tests 
+	mkdir -p ${ENVTEST_ASSETS_DIR}
+	$(setup-envtest) use '$(ENVTEST_K8S_VERSION)!'
+	export KUBEBUILDER_ASSETS="$$($(setup-envtest) use -i -p path '$(ENVTEST_K8S_VERSION)!')"; \
+		env | grep KUBEBUILDER; \
 	go test ./... -coverprofile cover.out
 
 .PHONY: fmt
