@@ -44,6 +44,5 @@ help: ## Display this help.
 
 .PHONY: generate
 generate:  ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	# TODO(glrf) move actual code generation to go generate
 	go generate
 
