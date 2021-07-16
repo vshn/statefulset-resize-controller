@@ -14,8 +14,8 @@ const ReplicasAnnotation = "sts-resize.appuio.ch/replicas"
 const ScalupAnnotation = "sts-resize.appuio.ch/scalup"
 
 // scaleDown will scale the StatefulSet to 0.
-// Might return an errInProgress, signaling that the scaling is not completed and the caller needs to backoff
-// scaleDown will not update the actual kubernetes resource, but expects the caller to upate the StatefulSet
+// Might return an errInProgress, signaling that the scaling is not completed and the caller needs to backoff.
+// scaleDown will not update the actual kubernetes resource, but expects the caller to upate the StatefulSet.
 func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 	if *sts.Spec.Replicas == 0 && sts.Status.Replicas == 0 {
 		return sts, nil
@@ -35,8 +35,8 @@ func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 
 // scaleUp will scale the StatefulSet to its original number of replicas.
 // Might return an errInProgress, signaling that the scaling is not completed and the caller needs to backoff.
-// scaleUp will not update the actual kubernetes resource, but expects the caller to upate the StatefulSet
-// Expects to be called after scaleDown and that the original replica size is available as an annotation
+// scaleUp will not update the actual kubernetes resource, but expects the caller to upate the StatefulSet.
+// Expects to be called after scaleDown and that the original replica size is available as an annotation.
 func scaleUp(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 	scale, err := strconv.Atoi(sts.Annotations[ReplicasAnnotation])
 	if err != nil {

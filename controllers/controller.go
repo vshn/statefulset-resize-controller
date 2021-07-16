@@ -38,17 +38,17 @@ var errInProgress = errors.New("in progress")
 var errCritical = errors.New("critical")
 
 // newErrCritical returns a new critical error.
-// The issue should be descriptive enough that Ops knows what is wrong
+// The issue should be descriptive enough that Ops knows what is wrong.
 func newErrCritical(issue string) error {
 	return fmt.Errorf("%w: %s", errCritical, issue)
 }
 
 // Unrecoverable error.
-// Will cause the reconciliation to stop, mark the StatefulSet as aborted and scale back
+// Will cause the reconciliation to stop, mark the StatefulSet as aborted and scale back.
 var errAbort = errors.New("Abort")
 
 // newErrAbort returns a new unrecoverable error.
-// The issue should be descriptive enough that Ops knows what is wrong
+// The issue should be descriptive enough that Ops knows what is wrong.
 func newErrAbort(issue string) error {
 	return fmt.Errorf("%w: %s", errAbort, issue)
 }
@@ -60,41 +60,50 @@ func newErrAbort(issue string) error {
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs/status,verbs=get;update;patch
 
-// Reconcile is the main work loop, reacting to changes in statefulsets and initiating resizing of StatefulSets
+// Reconcile is the main work loop, reacting to changes in statefulsets and initiating resizing of StatefulSets.
 func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx).WithValues("statefulset", req.NamespacedName)
 
+	// Fetch StatefulSet of the request
 	old := appsv1.StatefulSet{}
 	if err := r.Get(ctx, req.NamespacedName, &old); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	sts := *old.DeepCopy()
 
-	pvcs, err := r.getPVCInfo(ctx, sts)
+	// Get PVC information for all PVC that need to be resized
+	pvcs, err := r.getResizablePVCInfo(ctx, sts)
 	if err != nil {
 		l.Error(err, "Failed to get information of PVCs")
 		return ctrl.Result{}, err
 	}
 	if len(pvcs) == 0 {
+		// There are no PVCs that need to be resized.
+		// We do not need to handle this.
 		return ctrl.Result{}, nil
 	}
 	if sts.Labels != nil && sts.Labels[FailedLabel] == "true" {
-		// This Sts needs human interaction, we cannot fix this
+		// If this label is set the Sts needs human interaction, we cannot fix this.
+		// Common example for that is if the data transfer failed repeatedly, or if someone or something messed with the
+		// controller state and we are unable to recover.
 		return ctrl.Result{}, nil
 	}
 
+	// Perform resizing of all relevant PVCs of the StatefulSet, this includes the save scale down and scale up of the StatefulSet.
+	// This will not run through in one go but is meant to be called repeatedly until it succeeds.
+	// The resizing is idempotent and will return an errInProgress if we need to wait for asynchronous actions to complete.
 	res := ctrl.Result{}
 	sts, err = r.resize(ctx, sts, pvcs)
 	switch {
 	case errors.Is(err, errInProgress):
-		// Resizing is in progresss, backing off
+		// Resizing is in progress, backing off.
 		res = ctrl.Result{
 			RequeueAfter: 5 * time.Second,
 		}
 	case errors.Is(err, errAbort):
-		// Resizing failed and connot be recovered automatically
-		// We can abort and scale up
-		// We potentially ignore a critical error here, but as we already notify ops there is not much else to do
+		// Resizing failed and cannot be recovered automatically.
+		// We can abort and scale up.
+		// We potentially ignore a critical error here, but as we already notify ops there is not much else to do.
 		sts, _ = scaleUp(sts)
 		fallthrough
 	case errors.Is(err, errCritical):
@@ -106,15 +115,18 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		sts.Labels[FailedLabel] = "true"
 	case err == nil:
-		// Cleanup annotation with PVCInfo so we do not try to resize again
+		// We ran through successfully, so the resizing is complete.
+		// Cleanup annotation with PVCInfo so we do not try to resize again.
 		r.Recorder.Event(&sts, "Normal", "ResizeComplete", "Successfully resized StatefulSet")
 		l.Info("Successfully resized StatefulSet")
 		delete(sts.Annotations, PvcAnnotation)
 	default:
+		// Some potentially recoverable error. We will just back off exponentially and try again.
 		l.Error(err, "Unable to resize PVCs")
 		return ctrl.Result{}, err
 	}
 
+	// Apply possible changes from the resize function.
 	if !reflect.DeepEqual(sts.Annotations, old.Annotations) || !reflect.DeepEqual(sts.Spec, old.Spec) {
 		err := r.Client.Update(ctx, &sts)
 		if err != nil {
@@ -125,7 +137,10 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return res, nil
 }
 
-func (r *StatefulSetReconciler) getPVCInfo(ctx context.Context, sts appsv1.StatefulSet) ([]pvcInfo, error) {
+// getResizablePVCInfo returns a list of PVCs that do not satisfy the size requested as part of the template.
+func (r *StatefulSetReconciler) getResizablePVCInfo(ctx context.Context, sts appsv1.StatefulSet) ([]pvcInfo, error) {
+	// After the initial search for relevant PVCs, it will cache the result as an annotation.
+	// This is not done for performance, but to keep record of resizing PVCs and to not potentially loose them when recreating them.
 	pis := []pvcInfo{}
 	if sts.Annotations[PvcAnnotation] != "" {
 		if err := json.Unmarshal([]byte(sts.Annotations[PvcAnnotation]), &pis); err != nil {
@@ -146,6 +161,8 @@ func (r *StatefulSetReconciler) getPVCInfo(ctx context.Context, sts appsv1.State
 	return pis, nil
 }
 
+// resize grows all specified PVCs to their target size. It will first safely scale down the StatefulSet and scale it up if it
+// ran through successfully.
 func (r *StatefulSetReconciler) resize(ctx context.Context, sts appsv1.StatefulSet, pvcs []pvcInfo) (appsv1.StatefulSet, error) {
 	sts, err := scaleDown(sts)
 	if err != nil {
@@ -169,7 +186,6 @@ func (r *StatefulSetReconciler) resize(ctx context.Context, sts appsv1.StatefulS
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *StatefulSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// TODO(glrf) Add mode to only watch sts with specific labels or NS?
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1.StatefulSet{}).
 		Complete(r)

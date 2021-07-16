@@ -32,7 +32,7 @@ func (pi pvcInfo) backupName() string {
 
 // getResizablePVCs fetches the information of all PVCs that are smaller than the request of the statefulset
 func getResizablePVCs(ctx context.Context, c client.Reader, sts appsv1.StatefulSet) ([]pvcInfo, error) {
-	// NOTE(glrf) This will get _all_ PVCs that belonged to the sts. Even the ones not used anymore (i.e. if scaled up and down)
+	// NOTE(glrf) This will get _all_ PVCs that belonged to the sts. Even the ones not used anymore (i.e. if scaled up and down).
 	pvcs := corev1.PersistentVolumeClaimList{}
 	if err := c.List(ctx, &pvcs, client.InNamespace(sts.Namespace), client.MatchingLabels(sts.Spec.Selector.MatchLabels)); err != nil {
 		return nil, err
@@ -44,9 +44,9 @@ func getResizablePVCs(ctx context.Context, c client.Reader, sts appsv1.StatefulS
 // filterResizablePVCs filters out the PVCs that do not match the request of the statefulset
 func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []pvcInfo {
 	// StS managed PVCs are created according to the VolumeClaimTemplate.
-	// The name of the resulting PVC will be in the following format
+	// The name of the resulting PVC will be in the following format:
 	// <template.name>-<sts.name>-<ordinal-number>
-	// This allows us to match the pvcs to the template
+	// This allows us to match the pvcs to the template.
 
 	var res []pvcInfo
 
@@ -82,7 +82,7 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 	return res
 }
 
-// resizePVC is an idempotent function that will make sure the PVC in the pvcInfo will grow to the requested size
+// resizePVC is an idempotent function that will make sure the PVC in the pvcInfo will grow to the requested size.
 // This function might not run through successfully in a single run but may return an `errInProgress`, signifying
 // that the caller needs to retry later.
 func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvcInfo) error {

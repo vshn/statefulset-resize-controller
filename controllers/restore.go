@@ -10,6 +10,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// restorePVC will grow the referenced PVC to the target size, by recreating it if necessary and restore the
+// original data form the backup, created earlier using backupPVC.
+// This function might not run through successfully in a single run but may return an `errInProgress`, signifying
+// that the caller needs to retry later.
 func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) error {
 	// Check if the backup we want to restore from actually exists
 	backup := corev1.PersistentVolumeClaim{}
@@ -37,6 +41,8 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 	if err != nil {
 		return err
 	}
+
+	// We ran successfully. Let's mark it as done
 	if original.Annotations == nil {
 		// This should generally not happen, but let's better not panic if it does
 		original.Annotations = map[string]string{}
@@ -45,6 +51,10 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 	return r.Update(ctx, original)
 }
 
+// getOrRecreatePVC will get the referenced PVC. If it is not large enough, it will recreate the PVC with updated
+// resource requirements.
+// This function might not run through successfully in a single run but may return an `errInProgress`, signifying
+// that the caller needs to retry later.
 func (r *StatefulSetReconciler) getOrRecreatePVC(ctx context.Context, pi pvcInfo) (*corev1.PersistentVolumeClaim, error) {
 	found := corev1.PersistentVolumeClaim{}
 	pvc := corev1.PersistentVolumeClaim{
