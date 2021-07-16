@@ -93,8 +93,8 @@ var _ = Describe("scaledown", func() {
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						replicasAnnotation: tc.in.annotationReplica,
-						scalupAnnotation:   tc.in.annotationScaleUp,
+						ReplicasAnnotation: tc.in.annotationReplica,
+						ScalupAnnotation:   tc.in.annotationScaleUp,
 					},
 				},
 				Spec: appsv1.StatefulSetSpec{
@@ -113,7 +113,7 @@ var _ = Describe("scaledown", func() {
 			}
 			Expect(*sts.Spec.Replicas).To(Equal(tc.out.replicas), "replicas")
 			Expect(sts.Status.Replicas).To(Equal(tc.out.statusReplicas), "status replicas")
-			Expect(sts.Annotations[replicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
+			Expect(sts.Annotations[ReplicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
 		})
 	}
 })
@@ -187,7 +187,7 @@ var _ = Describe("scaleup", func() {
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						replicasAnnotation: tc.in.annotationReplica,
+						ReplicasAnnotation: tc.in.annotationReplica,
 					},
 				},
 				Spec: appsv1.StatefulSetSpec{
@@ -204,14 +204,14 @@ var _ = Describe("scaleup", func() {
 			} else {
 				if tc.done {
 					Expect(err).Should(Succeed())
-					Expect(sts.Annotations[scalupAnnotation]).To(Equal(""))
+					Expect(sts.Annotations[ScalupAnnotation]).To(Equal(""))
 				} else {
 					Expect(err).To(MatchError(errInProgress))
-					Expect(sts.Annotations[scalupAnnotation]).To(Equal("true"))
+					Expect(sts.Annotations[ScalupAnnotation]).To(Equal("true"))
 				}
 				Expect(*sts.Spec.Replicas).To(Equal(tc.out.replicas), "replicas")
 				Expect(sts.Status.Replicas).To(Equal(tc.out.statusReplicas), "status replicas")
-				Expect(sts.Annotations[replicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
+				Expect(sts.Annotations[ReplicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
 			}
 		})
 	}

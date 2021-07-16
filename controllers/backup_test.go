@@ -118,7 +118,7 @@ var _ = Describe("backupPVC", func() {
 				source: newSource("t5", "test", "1G"),
 				backup: newBackup("t5", "test-backup-1g", "1G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 			},

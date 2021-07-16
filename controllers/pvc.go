@@ -14,7 +14,7 @@ import (
 
 const managedLabel = "sts-resize.appuio.ch/managed"
 
-const doneAnnotation = "sts-resize.appuio.ch/done"
+const DoneAnnotation = "sts-resize.appuio.ch/done"
 
 // pvcInfo describs a resizable PVC
 type pvcInfo struct {

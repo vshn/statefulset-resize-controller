@@ -26,7 +26,7 @@ func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error
 	if err != nil {
 		return err
 	}
-	if backup.Annotations != nil && backup.Annotations[doneAnnotation] == "true" {
+	if backup.Annotations != nil && backup.Annotations[DoneAnnotation] == "true" {
 		// We ran successfully before
 		return nil
 	}
@@ -52,7 +52,7 @@ func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error
 		backup.Annotations = map[string]string{}
 	}
 	// We ran successfully
-	backup.Annotations[doneAnnotation] = "true"
+	backup.Annotations[DoneAnnotation] = "true"
 	return r.Update(ctx, backup)
 }
 

@@ -27,7 +27,7 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 		return err
 	}
 	// Check if we already restored it
-	if original.Annotations != nil && original.Annotations[doneAnnotation] == "true" {
+	if original.Annotations != nil && original.Annotations[DoneAnnotation] == "true" {
 		return nil
 	}
 	// Copy data from backup to resized original
@@ -41,7 +41,7 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvcInfo) erro
 		// This should generally not happen, but let's better not panic if it does
 		original.Annotations = map[string]string{}
 	}
-	original.Annotations[doneAnnotation] = "true"
+	original.Annotations[DoneAnnotation] = "true"
 	return r.Update(ctx, original)
 }
 

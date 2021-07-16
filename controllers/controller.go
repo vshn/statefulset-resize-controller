@@ -26,10 +26,10 @@ type StatefulSetReconciler struct {
 }
 
 // Label for failed sts resizing that need human interaction
-const failedLabel = "sts-resize.appuio.ch/failed"
+const FailedLabel = "sts-resize.appuio.ch/failed"
 
 // Annotation key in which the initial state of the pvcs is stored in
-const pvcAnnotation = "sts-resize.appuio.ch/pvcs"
+const PvcAnnotation = "sts-resize.appuio.ch/pvcs"
 
 // Error to return if reconciliation is running as planed but the caller needs to backoff and retry later
 var errInProgress = errors.New("in progress")
@@ -78,7 +78,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if len(pvcs) == 0 {
 		return ctrl.Result{}, nil
 	}
-	if sts.Labels != nil && sts.Labels[failedLabel] == "true" {
+	if sts.Labels != nil && sts.Labels[FailedLabel] == "true" {
 		// This Sts needs human interaction, we cannot fix this
 		return ctrl.Result{}, nil
 	}
@@ -104,12 +104,12 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if sts.Labels == nil {
 			sts.Labels = map[string]string{}
 		}
-		sts.Labels[failedLabel] = "true"
+		sts.Labels[FailedLabel] = "true"
 	case err == nil:
 		// Cleanup annotation with PVCInfo so we do not try to resize again
 		r.Recorder.Event(&sts, "Normal", "ResizeComplete", "Successfully resized StatefulSet")
 		l.Info("Successfully resized StatefulSet")
-		delete(sts.Annotations, pvcAnnotation)
+		delete(sts.Annotations, PvcAnnotation)
 	default:
 		l.Error(err, "Unable to resize PVCs")
 		return ctrl.Result{}, err
@@ -127,9 +127,9 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 func (r *StatefulSetReconciler) getPVCInfo(ctx context.Context, sts appsv1.StatefulSet) ([]pvcInfo, error) {
 	pis := []pvcInfo{}
-	if sts.Annotations[pvcAnnotation] != "" {
-		if err := json.Unmarshal([]byte(sts.Annotations[pvcAnnotation]), &pis); err != nil {
-			return nil, newErrCritical(fmt.Sprintf("Annotation %s malformed", pvcAnnotation))
+	if sts.Annotations[PvcAnnotation] != "" {
+		if err := json.Unmarshal([]byte(sts.Annotations[PvcAnnotation]), &pis); err != nil {
+			return nil, newErrCritical(fmt.Sprintf("Annotation %s malformed", PvcAnnotation))
 		}
 		return pis, nil
 	}
@@ -141,7 +141,7 @@ func (r *StatefulSetReconciler) getPVCInfo(ctx context.Context, sts appsv1.State
 	if err != nil {
 		return nil, err
 	}
-	sts.Annotations[pvcAnnotation] = string(data)
+	sts.Annotations[PvcAnnotation] = string(data)
 
 	return pis, nil
 }

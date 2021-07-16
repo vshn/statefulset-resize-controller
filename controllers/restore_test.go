@@ -43,7 +43,7 @@ var _ = Describe("restorePVC", func() {
 				source: newSource("r1", "test", "1G"),
 				backup: newBackup("r1", "test-backup-1g", "1G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 			},
@@ -65,7 +65,7 @@ var _ = Describe("restorePVC", func() {
 			in: state{
 				backup: newBackup("r2", "test-backup-1g", "1G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 			},
@@ -93,7 +93,7 @@ var _ = Describe("restorePVC", func() {
 				source: newSource("r3", "test", "4G"),
 				backup: newBackup("r3", "test-backup-1g", "1G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 				job: newTestJob("r3",
@@ -104,7 +104,7 @@ var _ = Describe("restorePVC", func() {
 			out: state{
 				source: newSource("r3", "test", "4G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 				backup: newBackup("r3", "test-backup-1g", "1G"),
@@ -125,7 +125,7 @@ var _ = Describe("restorePVC", func() {
 				source: newSource("r4", "test", "4G"),
 				backup: newBackup("r4", "test-backup-1g", "1G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 			},
@@ -152,7 +152,7 @@ var _ = Describe("restorePVC", func() {
 			in: state{
 				source: newSource("r5", "test", "4G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 				backup: newBackup("r5", "test-backup-1g", "1G"),
@@ -186,7 +186,7 @@ var _ = Describe("restorePVC", func() {
 				source: newSource("fr3", "test", "4G"),
 				backup: newBackup("fr3", "test-backup-1g", "1G",
 					func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-						pvc.Annotations = map[string]string{doneAnnotation: "true"}
+						pvc.Annotations = map[string]string{DoneAnnotation: "true"}
 						return pvc
 					}),
 				job: newTestJob("fr3",
