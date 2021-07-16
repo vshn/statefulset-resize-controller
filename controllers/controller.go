@@ -25,10 +25,10 @@ type StatefulSetReconciler struct {
 	SyncContainerImage string
 }
 
-// Label for failed sts resizing that need human interaction
+// FailedLabel is a label for failed sts resizing that need human interaction
 const FailedLabel = "sts-resize.appuio.ch/failed"
 
-// Annotation key in which the initial state of the pvcs is stored in
+// PvcAnnotation is an annotation in which the initial state of the pvcs is stored in
 const PvcAnnotation = "sts-resize.appuio.ch/pvcs"
 
 // Error to return if reconciliation is running as planed but the caller needs to backoff and retry later

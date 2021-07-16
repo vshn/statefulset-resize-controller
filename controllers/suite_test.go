@@ -105,7 +105,7 @@ func newBackup(namespace, name, size string, fs ...func(*corev1.PersistentVolume
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				managedLabel: "true",
+				ManagedLabel: "true",
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
@@ -134,7 +134,7 @@ func newTestJob(namespace string, src, dst client.ObjectKey, image string, state
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				managedLabel: "true",
+				ManagedLabel: "true",
 			},
 		},
 		Spec: batchv1.JobSpec{

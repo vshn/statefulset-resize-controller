@@ -9,8 +9,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 )
 
-const SizeAnnotation = "sts-resize.appuio.ch/size"
+// ReplicasAnnotation stores the initial number of replicas before scaling down the StatefulSet.
 const ReplicasAnnotation = "sts-resize.appuio.ch/replicas"
+
+// ScalupAnnotation marks a replica as in the process of scaling back up and prevents the controller from scaling it down.
 const ScalupAnnotation = "sts-resize.appuio.ch/scalup"
 
 // scaleDown will scale the StatefulSet to 0.

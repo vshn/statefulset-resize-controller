@@ -72,7 +72,7 @@ func (r *StatefulSetReconciler) getOrCreateBackup(ctx context.Context, pi pvcInf
 			Name:      pi.backupName(),
 			Namespace: pi.Namespace,
 			Labels: map[string]string{
-				managedLabel: "true",
+				ManagedLabel: "true",
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{

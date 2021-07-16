@@ -12,8 +12,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const managedLabel = "sts-resize.appuio.ch/managed"
+// ManagedLabel is a label to mark resources to be managed by the controller
+const ManagedLabel = "sts-resize.appuio.ch/managed"
 
+// DoneAnnotation is an annotation that either marks a backup as successful or an orignial as completely resized
 const DoneAnnotation = "sts-resize.appuio.ch/done"
 
 // pvcInfo describs a resizable PVC

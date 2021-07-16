@@ -57,7 +57,7 @@ func newJob(namespace, image, src, dst string) batchv1.Job {
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				managedLabel: "true",
+				ManagedLabel: "true",
 			},
 		},
 		Spec: batchv1.JobSpec{
