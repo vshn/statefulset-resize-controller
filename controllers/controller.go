@@ -72,7 +72,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	pvcs, err := r.getPVCInfo(ctx, sts)
 	if err != nil {
-		l.V(0).Error(err, "Failed to get information of PVCs")
+		l.Error(err, "Failed to get information of PVCs")
 		return ctrl.Result{}, err
 	}
 	if len(pvcs) == 0 {
@@ -100,7 +100,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	case errors.Is(err, errCritical):
 		// Something went very wrong.
 		r.Recorder.Event(&sts, "Warning", "ErrorResize", err.Error())
-		l.V(0).Error(err, "Unable to resize PVCs and cannot recover")
+		l.Error(err, "Unable to resize PVCs and cannot recover")
 		if sts.Labels == nil {
 			sts.Labels = map[string]string{}
 		}
@@ -108,17 +108,17 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	case err == nil:
 		// Cleanup annotation with PVCInfo so we do not try to resize again
 		r.Recorder.Event(&sts, "Normal", "ResizeComplete", "Successfully resized StatefulSet")
-		l.V(1).Info("Successfully resized StatefulSet")
+		l.Info("Successfully resized StatefulSet")
 		delete(sts.Annotations, pvcAnnotation)
 	default:
-		l.V(0).Error(err, "Unable to resize PVCs")
+		l.Error(err, "Unable to resize PVCs")
 		return ctrl.Result{}, err
 	}
 
 	if !reflect.DeepEqual(sts.Annotations, old.Annotations) || !reflect.DeepEqual(sts.Spec, old.Spec) {
 		err := r.Client.Update(ctx, &sts)
 		if err != nil {
-			l.V(0).Error(err, "Unable to update StatefulSet")
+			l.Error(err, "Unable to update StatefulSet")
 			return ctrl.Result{}, err
 		}
 	}
