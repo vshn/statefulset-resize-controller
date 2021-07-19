@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
@@ -180,6 +181,56 @@ func newTestJob(namespace string, src, dst client.ObjectKey, image string, state
 	return job
 }
 
+func newTestStatefulSet(namespace, name string) *appsv1.StatefulSet {
+	replicas := int32(3)
+	l := map[string]string{
+		"app": name,
+	}
+	return &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: l,
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: l,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "test",
+							Image: "test",
+						},
+					},
+				},
+			},
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "data",
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.ResourceRequirements{
+							Requests: map[corev1.ResourceName]resource.Quantity{
+								corev1.ResourceStorage: resource.MustParse("2G"),
+							},
+						},
+						AccessModes: []corev1.PersistentVolumeAccessMode{
+							corev1.ReadWriteOnce,
+						},
+					},
+				},
+			},
+			ServiceName: name,
+		},
+	}
+}
+
 var jobSucceeded = batchv1.JobComplete
 var jobFailed = batchv1.JobFailed
 
@@ -218,4 +269,31 @@ func jobNotExists(ctx context.Context, c client.Client, other *batchv1.Job) bool
 	// This is needed as the testenv does not properly clean up jobs
 	// Their stuck as there is a finalizer to remove pods
 	return apierrors.IsNotFound(err) || (err == nil && job.DeletionTimestamp != nil)
+}
+
+func stsExists(ctx context.Context, c client.Client, other *appsv1.StatefulSet) bool {
+	sts := &appsv1.StatefulSet{}
+	key := client.ObjectKeyFromObject(other)
+	if err := c.Get(ctx, key, sts); err != nil {
+		return false
+	}
+	return assert.ObjectsAreEqual(sts.Spec, other.Spec) && assert.ObjectsAreEqual(sts.Labels, other.Labels)
+}
+
+func consistently(t assert.TestingT, condition func() bool, waitFor time.Duration, tick time.Duration, msgAndArgs ...interface{}) bool {
+	after := time.After(waitFor)
+
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+
+	for tick := ticker.C; ; {
+		select {
+		case <-after:
+			return true
+		case <-tick:
+			if !condition() {
+				return assert.Fail(t, "Condition not satisfied", msgAndArgs...)
+			}
+		}
+	}
 }

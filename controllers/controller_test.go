@@ -10,7 +10,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -59,14 +58,13 @@ func TestController(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			ns := "e2e1"
-			//assert := assert.New(t)
 			require := require.New(t)
 			require.Nil(c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
 			}))
-			sts := newStatefulSet(ns, "test")
+			sts := newTestStatefulSet(ns, "test")
 			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "2G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
@@ -84,7 +82,6 @@ func TestController(t *testing.T) {
 				})))
 			require.Nil(c.Create(ctx, sts))
 
-			// There could be a race condition here? Not sure if the creation is actually synchronous.
 			consistently(t, func() bool {
 				return stsExists(ctx, c, sts)
 			}, duration, interval)
@@ -94,14 +91,13 @@ func TestController(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			ns := "e2e2"
-			//assert := assert.New(t)
 			require := require.New(t)
 			require.Nil(c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
 			}))
-			sts := newStatefulSet(ns, "test")
+			sts := newTestStatefulSet(ns, "test")
 			sts.Labels = map[string]string{FailedLabel: "true"}
 			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
@@ -120,7 +116,6 @@ func TestController(t *testing.T) {
 				})))
 			require.Nil(c.Create(ctx, sts))
 
-			// There could be a race condition here? Not sure if the creation is actually synchronous.
 			consistently(t, func() bool {
 				return stsExists(ctx, c, sts)
 			}, duration, interval)
@@ -138,7 +133,7 @@ func TestController(t *testing.T) {
 					Name: ns,
 				},
 			}))
-			sts := newStatefulSet(ns, "test")
+			sts := newTestStatefulSet(ns, "test")
 			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
@@ -175,7 +170,7 @@ func TestController(t *testing.T) {
 					Name: ns,
 				},
 			}))
-			sts := newStatefulSet(ns, "test")
+			sts := newTestStatefulSet(ns, "test")
 			r := int32(0)
 			sts.Spec.Replicas = &r
 			sts.Annotations = map[string]string{
@@ -227,81 +222,4 @@ func TestController(t *testing.T) {
 			}, timeout, interval)
 		})
 	})
-}
-
-func consistently(t assert.TestingT, condition func() bool, waitFor time.Duration, tick time.Duration, msgAndArgs ...interface{}) bool {
-	after := time.After(waitFor)
-
-	ticker := time.NewTicker(tick)
-	defer ticker.Stop()
-
-	for tick := ticker.C; ; {
-		select {
-		case <-after:
-			return true
-		case <-tick:
-			if !condition() {
-				return assert.Fail(t, "Condition not satisfied", msgAndArgs...)
-			}
-		}
-	}
-}
-
-func newStatefulSet(namespace, name string) *appsv1.StatefulSet {
-	replicas := int32(3)
-	l := map[string]string{
-		"app": name,
-	}
-	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: appsv1.StatefulSetSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: l,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: l,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test",
-							Image: "test",
-						},
-					},
-				},
-			},
-			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "data",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						Resources: corev1.ResourceRequirements{
-							Requests: map[corev1.ResourceName]resource.Quantity{
-								corev1.ResourceStorage: resource.MustParse("2G"),
-							},
-						},
-						AccessModes: []corev1.PersistentVolumeAccessMode{
-							corev1.ReadWriteOnce,
-						},
-					},
-				},
-			},
-			ServiceName: name,
-		},
-	}
-}
-
-func stsExists(ctx context.Context, c client.Client, other *appsv1.StatefulSet) bool {
-	sts := &appsv1.StatefulSet{}
-	key := client.ObjectKeyFromObject(other)
-	if err := c.Get(ctx, key, sts); err != nil {
-		return false
-	}
-	return assert.ObjectsAreEqual(sts.Spec, other.Spec) && assert.ObjectsAreEqual(sts.Labels, other.Labels)
 }
