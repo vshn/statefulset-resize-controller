@@ -15,16 +15,6 @@ import (
 // of the original PVC. This function might not run through successfully in a single run but may return an `errInProgress`, signifying
 // that the caller needs to retry later.
 func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error {
-	// Check if the original PVC still exists. If not there is a problem.
-	original := corev1.PersistentVolumeClaim{}
-	if err := r.Get(ctx, client.ObjectKey{Name: pi.Name, Namespace: pi.Namespace}, &original); err != nil {
-		if apierrors.IsNotFound(err) {
-			// If its not present we are in an inconsitent state
-			return newErrCritical("original pvc missing while trying to back it up")
-		}
-		return err
-	}
-
 	// Create the backupPVC with the correct size or return it if it already exists.
 	backup, err := r.getOrCreateBackup(ctx, pi)
 	if err != nil {
@@ -33,6 +23,15 @@ func (r *StatefulSetReconciler) backupPVC(ctx context.Context, pi pvcInfo) error
 	if backup.Annotations != nil && backup.Annotations[DoneAnnotation] == "true" {
 		// We ran successfully before
 		return nil
+	}
+	// Check if the original PVC still exists. If not there is a problem.
+	original := corev1.PersistentVolumeClaim{}
+	if err := r.Get(ctx, client.ObjectKey{Name: pi.Name, Namespace: pi.Namespace}, &original); err != nil {
+		if apierrors.IsNotFound(err) {
+			// If its not present we are in an inconsitent state
+			return newErrCritical("original pvc missing while trying to back it up")
+		}
+		return err
 	}
 	q := backup.Spec.Resources.Requests[corev1.ResourceStorage]              // Necessary because pointer receiver
 	if q.Cmp(original.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 { // Returns -1 if q < size of original
