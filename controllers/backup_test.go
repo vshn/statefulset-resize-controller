@@ -229,29 +229,29 @@ func TestBackupPVC(t *testing.T) {
 
 			if tc.out.source != nil {
 				assert.Eventually(func() bool {
-					return pvcExists(ctx, tc.out.source)
+					return pvcExists(ctx, k8sClient, tc.out.source)
 				}, timeout, interval, "Source is not as expected")
 			} else if tc.in.source != nil {
 				assert.Eventually(func() bool {
-					return pvcNotExists(ctx, tc.in.source)
+					return pvcNotExists(ctx, k8sClient, tc.in.source)
 				}, timeout, interval, "Source not deleted")
 			}
 			if tc.out.backup != nil {
 				assert.Eventually(func() bool {
-					return pvcExists(ctx, tc.out.backup)
+					return pvcExists(ctx, k8sClient, tc.out.backup)
 				}, timeout, interval, "Backup is not as expected")
 			} else if tc.in.backup != nil {
 				assert.Eventually(func() bool {
-					return pvcNotExists(ctx, tc.in.backup)
+					return pvcNotExists(ctx, k8sClient, tc.in.backup)
 				}, timeout, interval, "Backup not deleted")
 			}
 			if tc.out.job != nil {
 				assert.Eventually(func() bool {
-					return jobExists(ctx, tc.out.job)
+					return jobExists(ctx, k8sClient, tc.out.job)
 				}, timeout, interval, "Job is not as expected")
 			} else if tc.in.job != nil {
 				assert.Eventually(func() bool {
-					return jobNotExists(ctx, tc.in.job)
+					return jobNotExists(ctx, k8sClient, tc.in.job)
 				}, timeout, interval, "Job not deleted")
 			}
 		})

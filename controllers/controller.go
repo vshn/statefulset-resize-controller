@@ -127,7 +127,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Apply possible changes from the resize function.
-	if !reflect.DeepEqual(sts.Annotations, old.Annotations) || !reflect.DeepEqual(sts.Spec, old.Spec) {
+	if !reflect.DeepEqual(sts.Annotations, old.Annotations) || !reflect.DeepEqual(sts.Spec, old.Spec) || !reflect.DeepEqual(sts.Labels, old.Labels) {
 		err := r.Client.Update(ctx, &sts)
 		if err != nil {
 			l.Error(err, "Unable to update StatefulSet")
@@ -155,6 +155,9 @@ func (r *StatefulSetReconciler) getResizablePVCInfo(ctx context.Context, sts app
 	data, err := json.Marshal(pis)
 	if err != nil {
 		return nil, err
+	}
+	if sts.Annotations == nil {
+		sts.Annotations = map[string]string{}
 	}
 	sts.Annotations[PvcAnnotation] = string(data)
 

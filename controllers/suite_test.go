@@ -183,27 +183,27 @@ func newTestJob(namespace string, src, dst client.ObjectKey, image string, state
 var jobSucceeded = batchv1.JobComplete
 var jobFailed = batchv1.JobFailed
 
-func pvcExists(ctx context.Context, other *corev1.PersistentVolumeClaim) bool {
+func pvcExists(ctx context.Context, c client.Client, other *corev1.PersistentVolumeClaim) bool {
 	pvc := &corev1.PersistentVolumeClaim{}
 	key := client.ObjectKeyFromObject(other)
-	if err := k8sClient.Get(ctx, key, pvc); err != nil {
+	if err := c.Get(ctx, key, pvc); err != nil {
 		return false
 	}
 	return assert.ObjectsAreEqual(pvc.Spec, other.Spec) && assert.ObjectsAreEqual(pvc.Labels, other.Labels)
 }
 
-func pvcNotExists(ctx context.Context, other *corev1.PersistentVolumeClaim) bool {
+func pvcNotExists(ctx context.Context, c client.Client, other *corev1.PersistentVolumeClaim) bool {
 	pvc := &corev1.PersistentVolumeClaim{}
 	key := client.ObjectKeyFromObject(other)
-	err := k8sClient.Get(ctx, key, pvc)
+	err := c.Get(ctx, key, pvc)
 	// This is needed as the testenv does not properly clean up pvcs
 	return apierrors.IsNotFound(err) || (err == nil && pvc.DeletionTimestamp != nil)
 }
 
-func jobExists(ctx context.Context, other *batchv1.Job) bool {
+func jobExists(ctx context.Context, c client.Client, other *batchv1.Job) bool {
 	job := &batchv1.Job{}
 	key := client.ObjectKeyFromObject(other)
-	if err := k8sClient.Get(ctx, key, job); err != nil {
+	if err := c.Get(ctx, key, job); err != nil {
 		return false
 	}
 	return assert.ObjectsAreEqual(job.Spec.Template.Spec.Containers, other.Spec.Template.Spec.Containers) &&
@@ -211,10 +211,10 @@ func jobExists(ctx context.Context, other *batchv1.Job) bool {
 		assert.ObjectsAreEqual(job.Labels, other.Labels)
 }
 
-func jobNotExists(ctx context.Context, other *batchv1.Job) bool {
+func jobNotExists(ctx context.Context, c client.Client, other *batchv1.Job) bool {
 	job := &batchv1.Job{}
 	key := client.ObjectKeyFromObject(other)
-	err := k8sClient.Get(ctx, key, job)
+	err := c.Get(ctx, key, job)
 	// This is needed as the testenv does not properly clean up jobs
 	// Their stuck as there is a finalizer to remove pods
 	return apierrors.IsNotFound(err) || (err == nil && job.DeletionTimestamp != nil)

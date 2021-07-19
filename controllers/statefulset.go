@@ -28,6 +28,10 @@ func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 		return sts, nil
 	}
 	if sts.Annotations[ReplicasAnnotation] == "" {
+		if sts.Annotations == nil {
+			// shouldn't happen in practice, but let's not panic anyway
+			sts.Annotations = map[string]string{}
+		}
 		sts.Annotations[ReplicasAnnotation] = strconv.Itoa(int(*sts.Spec.Replicas))
 	}
 	z := int32(0)
@@ -45,6 +49,10 @@ func scaleUp(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
 		return sts, newErrCritical(fmt.Sprintf("failed to get original scale as %s is not readable", ReplicasAnnotation))
 	}
 	scale32 := int32(scale) // need to add this to be able to dereference the int32 version
+	if sts.Annotations == nil {
+		// shouldn't happen in practice, but let's not panic anyway
+		sts.Annotations = map[string]string{}
+	}
 	sts.Annotations[ScalupAnnotation] = "true"
 
 	if *sts.Spec.Replicas == scale32 && sts.Status.Replicas == scale32 {
