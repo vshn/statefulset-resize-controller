@@ -2,16 +2,16 @@ package controllers
 
 import (
 	"fmt"
+	"testing"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("filterResizablePVCs", func() {
+func TestFilterResizablePVCs(t *testing.T) {
 	type tmpl struct {
 		name string
 		size string
@@ -243,7 +243,9 @@ var _ = Describe("filterResizablePVCs", func() {
 
 	for k, tc := range tcs {
 		tc := tc // necessary because Ginkgo weirdness
-		It(k, func() {
+		t.Run(k, func(t *testing.T) {
+			assert := assert.New(t)
+
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{Name: tc.sts.name, Namespace: tc.sts.namespace},
 				Spec: appsv1.StatefulSetSpec{
@@ -285,12 +287,12 @@ var _ = Describe("filterResizablePVCs", func() {
 			}
 
 			rps := filterResizablePVCs(sts, pvcs)
-			Expect(rps).To(HaveLen(len(tc.out)))
+			assert.Len(rps, len(tc.out))
 			for _, r := range rps {
 				o, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.Name)]
-				Expect(ok).To(BeTrue())
-				Expect(r.TargetSize.String()).To(Equal(o))
+				assert.True(ok)
+				assert.Equal(r.TargetSize.String(), o)
 			}
 		})
 	}
-})
+}

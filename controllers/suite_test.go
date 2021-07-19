@@ -1,72 +1,48 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
-	"path/filepath"
+	"log"
 	"testing"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/types"
+	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	//+kubebuilder:scaffold:imports
 )
-
-// These tests use Ginkgo (BDD-style Go testing framework). Refer to
-// http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
 
-func TestAPIs(t *testing.T) {
-	RegisterFailHandler(Fail)
-
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
-}
-
-var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: false,
-	}
-
+func TestMain(m *testing.M) {
+	testEnv = &envtest.Environment{}
 	cfg, err := testEnv.Start()
-	Expect(err).NotTo(HaveOccurred())
-	Expect(cfg).NotTo(BeNil())
+	if err != nil {
+		log.Fatalf("Failed to start testEnv: %v", err)
+	}
+	defer testEnv.Stop()
 
 	err = appsv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	//+kubebuilder:scaffold:scheme
+	if err != nil {
+		log.Fatalf("Failed to add scheme to testEnv: %v", err)
+	}
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
-
-}, 60)
-
-var _ = AfterSuite(func() {
-	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
-})
+	if err != nil {
+		log.Fatalf("Failed to get client for testEnv: %v", err)
+	}
+	m.Run()
+}
 
 // Some helper functions
 func newSource(namespace, name, size string, fs ...func(*corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
@@ -207,45 +183,39 @@ func newTestJob(namespace string, src, dst client.ObjectKey, image string, state
 var jobSucceeded = batchv1.JobComplete
 var jobFailed = batchv1.JobFailed
 
-func BeEquivalentPVC(other *corev1.PersistentVolumeClaim) types.GomegaMatcher {
-	return SatisfyAll(
-		WithTransform(
-			func(pvc *corev1.PersistentVolumeClaim) corev1.PersistentVolumeClaimSpec {
-				return pvc.Spec
-			},
-			BeEquivalentTo(other.Spec),
-		),
-		WithTransform(
-			func(pvc *corev1.PersistentVolumeClaim) map[string]string {
-				return pvc.ObjectMeta.Labels
-			},
-			BeEquivalentTo(other.ObjectMeta.Labels),
-		),
-	)
-}
-func BeEquivalentJob(other *batchv1.Job) types.GomegaMatcher {
-	if other == nil {
-		other = &batchv1.Job{}
-		return BeEquivalentTo(other)
+func pvcExists(ctx context.Context, other *corev1.PersistentVolumeClaim) bool {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := client.ObjectKeyFromObject(other)
+	if err := k8sClient.Get(ctx, key, pvc); err != nil {
+		return false
 	}
-	return SatisfyAll(
-		WithTransform(
-			func(job *batchv1.Job) []corev1.Container {
-				return job.Spec.Template.Spec.Containers
-			},
-			BeEquivalentTo(other.Spec.Template.Spec.Containers),
-		),
-		WithTransform(
-			func(job *batchv1.Job) []corev1.Volume {
-				return job.Spec.Template.Spec.Volumes
-			},
-			BeEquivalentTo(other.Spec.Template.Spec.Volumes),
-		),
-		WithTransform(
-			func(job *batchv1.Job) map[string]string {
-				return job.ObjectMeta.Labels
-			},
-			BeEquivalentTo(other.ObjectMeta.Labels),
-		),
-	)
+	return assert.ObjectsAreEqual(pvc.Spec, other.Spec) && assert.ObjectsAreEqual(pvc.Labels, other.Labels)
+}
+
+func pvcNotExists(ctx context.Context, other *corev1.PersistentVolumeClaim) bool {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := client.ObjectKeyFromObject(other)
+	err := k8sClient.Get(ctx, key, pvc)
+	// This is needed as the testenv does not properly clean up pvcs
+	return apierrors.IsNotFound(err) || (err == nil && pvc.DeletionTimestamp != nil)
+}
+
+func jobExists(ctx context.Context, other *batchv1.Job) bool {
+	job := &batchv1.Job{}
+	key := client.ObjectKeyFromObject(other)
+	if err := k8sClient.Get(ctx, key, job); err != nil {
+		return false
+	}
+	return assert.ObjectsAreEqual(job.Spec.Template.Spec.Containers, other.Spec.Template.Spec.Containers) &&
+		assert.ObjectsAreEqual(job.Spec.Template.Spec.Volumes, other.Spec.Template.Spec.Volumes) &&
+		assert.ObjectsAreEqual(job.Labels, other.Labels)
+}
+
+func jobNotExists(ctx context.Context, other *batchv1.Job) bool {
+	job := &batchv1.Job{}
+	key := client.ObjectKeyFromObject(other)
+	err := k8sClient.Get(ctx, key, job)
+	// This is needed as the testenv does not properly clean up jobs
+	// Their stuck as there is a finalizer to remove pods
+	return apierrors.IsNotFound(err) || (err == nil && job.DeletionTimestamp != nil)
 }

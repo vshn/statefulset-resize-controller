@@ -2,20 +2,19 @@ package controllers
 
 import (
 	"context"
-	"errors"
+	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("restorePVC", func() {
+func TestRestorePVC(t *testing.T) {
 	timeout := time.Second * 10
 	interval := time.Millisecond * 250
 
@@ -204,22 +203,24 @@ var _ = Describe("restorePVC", func() {
 		tc := tc
 		ctx := context.Background()
 		k := k
-
-		It(k, func() {
-			Expect(k8sClient.Create(ctx, &corev1.Namespace{
+		t.Run(k, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
+			require.Nil(k8sClient.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{Name: tc.namespace},
-			})).To(Succeed())
+			}))
 			if tc.in.source != nil {
-				Expect(k8sClient.Create(ctx, tc.in.source)).To(Succeed())
+				require.Nil(k8sClient.Create(ctx, tc.in.source))
 			}
 			if tc.in.backup != nil {
-				Expect(k8sClient.Create(ctx, tc.in.backup)).To(Succeed())
+				require.Nil(k8sClient.Create(ctx, tc.in.backup))
 			}
 			if tc.in.job != nil {
 				stat := tc.in.job.Status
-				Expect(k8sClient.Create(ctx, tc.in.job)).To(Succeed())
+				require.Nil(k8sClient.Create(ctx, tc.in.job))
 				tc.in.job.Status = stat // Create removes status
-				Expect(k8sClient.Status().Update(ctx, tc.in.job)).To(Succeed())
+				require.Nil(k8sClient.Status().Update(ctx, tc.in.job))
 			}
 			r := StatefulSetReconciler{
 				Client:             k8sClient,
@@ -239,77 +240,45 @@ var _ = Describe("restorePVC", func() {
 				pi = *tc.pvcInfo
 			}
 			pi.TargetSize = resource.MustParse(tc.targetSize)
+
 			err := r.restorePVC(ctx, pi)
 
 			if tc.err != nil {
-				Expect(errors.Is(err, tc.err)).To(BeTrue(), "expect error %v got %v", tc.err, err)
+				require.ErrorIs(err, tc.err)
 				return
 			}
-
 			if !tc.done {
-				Expect(err).To(MatchError(errInProgress))
+				require.ErrorIs(err, errInProgress)
 			} else {
-				Expect(err).To(Succeed())
+				require.Nil(err)
 			}
-
 			if tc.out.source != nil {
-				Eventually(func() (*corev1.PersistentVolumeClaim, error) {
-					key := client.ObjectKeyFromObject(tc.out.source)
-					pvc := &corev1.PersistentVolumeClaim{}
-					err := k8sClient.Get(ctx, key, pvc)
-					return pvc, err
-				}, timeout, interval).Should(BeEquivalentPVC(tc.out.source))
+				assert.Eventually(func() bool {
+					return pvcExists(ctx, tc.out.source)
+				}, timeout, interval, "Source is not as expected")
 			} else if tc.in.source != nil {
-				Eventually(func() metav1.StatusReason {
-					key := client.ObjectKeyFromObject(tc.in.source)
-					pvc := &corev1.PersistentVolumeClaim{}
-					if err := k8sClient.Get(ctx, key, pvc); err != nil {
-						return apierrors.ReasonForError(err)
-					}
-					if pvc.DeletionTimestamp != nil {
-						// This is needed as the testenv does not properly clean up pvcs
-						return metav1.StatusReasonNotFound
-					}
-					return "found"
-
-				}, timeout, interval).Should(Equal(metav1.StatusReasonNotFound))
+				assert.Eventually(func() bool {
+					return pvcNotExists(ctx, tc.in.source)
+				}, timeout, interval, "Source not deleted")
 			}
 			if tc.out.backup != nil {
-				Eventually(func() (*corev1.PersistentVolumeClaim, error) {
-					key := client.ObjectKeyFromObject(tc.out.backup)
-					pvc := &corev1.PersistentVolumeClaim{}
-					err := k8sClient.Get(ctx, key, pvc)
-					return pvc, err
-				}, timeout, interval).Should(BeEquivalentPVC(tc.out.backup))
+				assert.Eventually(func() bool {
+					return pvcExists(ctx, tc.out.backup)
+				}, timeout, interval, "Backup is not as expected")
 			} else if tc.in.backup != nil {
-				Eventually(func() metav1.StatusReason {
-					key := client.ObjectKeyFromObject(tc.in.backup)
-					pvc := &corev1.PersistentVolumeClaim{}
-					return apierrors.ReasonForError(k8sClient.Get(ctx, key, pvc))
-				}, timeout, interval).Should(Equal(metav1.StatusReasonNotFound))
+				assert.Eventually(func() bool {
+					return pvcNotExists(ctx, tc.in.backup)
+				}, timeout, interval, "Backup not deleted")
 			}
 			if tc.out.job != nil {
-				Eventually(func() (*batchv1.Job, error) {
-					key := client.ObjectKeyFromObject(tc.out.job)
-					job := &batchv1.Job{}
-					err := k8sClient.Get(ctx, key, job)
-					return job, err
-				}, timeout, interval).Should(BeEquivalentJob(tc.out.job))
+				assert.Eventually(func() bool {
+					return jobExists(ctx, tc.out.job)
+				}, timeout, interval, "Job is not as expected")
 			} else if tc.in.job != nil {
-				Eventually(func() metav1.StatusReason {
-					key := client.ObjectKeyFromObject(tc.in.job)
-					job := &batchv1.Job{}
-					if err := k8sClient.Get(ctx, key, job); err != nil {
-						return apierrors.ReasonForError(err)
-					}
-					if job.DeletionTimestamp != nil {
-						// This is needed as the testenv does not properly clean up jobs
-						// Their stuck as there is a finalizer to remove pods
-						return metav1.StatusReasonNotFound
-					}
-					return "found"
-				}, timeout, interval).Should(Equal(metav1.StatusReasonNotFound))
+				assert.Eventually(func() bool {
+					return jobNotExists(ctx, tc.in.job)
+				}, timeout, interval, "Job not deleted")
 			}
 		})
 	}
-})
+}

@@ -1,14 +1,15 @@
 package controllers
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("scaledown", func() {
+func TestStatefulSetScaledown(t *testing.T) {
 	type state struct {
 		replicas          int32
 		annotationState   string
@@ -89,7 +90,9 @@ var _ = Describe("scaledown", func() {
 	}
 	for k, tc := range tcs {
 		tc := tc // necessary because Ginkgo weirdness
-		It(k, func() {
+		t.Run(k, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -107,18 +110,19 @@ var _ = Describe("scaledown", func() {
 
 			sts, err := scaleDown(sts)
 			if tc.done {
-				Expect(err).Should(Succeed())
+				require.Nil(err)
 			} else {
-				Expect(err).To(MatchError(errInProgress))
+				require.ErrorIs(err, errInProgress)
 			}
-			Expect(*sts.Spec.Replicas).To(Equal(tc.out.replicas), "replicas")
-			Expect(sts.Status.Replicas).To(Equal(tc.out.statusReplicas), "status replicas")
-			Expect(sts.Annotations[ReplicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
+			assert.Equal(*sts.Spec.Replicas, tc.out.replicas, "replicas")
+			assert.Equal(sts.Status.Replicas, tc.out.statusReplicas, "replicas")
+			require.NotNil(sts.Annotations, "replicas annotation")
+			assert.Equal(sts.Annotations[ReplicasAnnotation], tc.out.annotationReplica, "replicas annotation")
 		})
 	}
-})
+}
 
-var _ = Describe("scaleup", func() {
+func TestStatefulSetScaleUp(t *testing.T) {
 	type state struct {
 		replicas          int32
 		annotationState   string
@@ -183,7 +187,10 @@ var _ = Describe("scaleup", func() {
 	}
 	for k, tc := range tcs {
 		tc := tc // necessary because Ginkgo weirdness
-		It(k, func() {
+		t.Run(k, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -200,19 +207,21 @@ var _ = Describe("scaleup", func() {
 
 			sts, err := scaleUp(sts)
 			if tc.fail {
-				Expect(err).ShouldNot(Succeed())
+				assert.NotNil(err)
 			} else {
 				if tc.done {
-					Expect(err).Should(Succeed())
-					Expect(sts.Annotations[ScalupAnnotation]).To(Equal(""))
+					require.Nil(err)
+					require.NotNil(sts.Annotations, "annotation")
+					assert.Equal(sts.Annotations[ScalupAnnotation], "", "scaleup annotation")
 				} else {
-					Expect(err).To(MatchError(errInProgress))
-					Expect(sts.Annotations[ScalupAnnotation]).To(Equal("true"))
+					require.ErrorIs(err, errInProgress)
+					assert.Equal(sts.Annotations[ScalupAnnotation], "true", "scaleup annotation")
 				}
-				Expect(*sts.Spec.Replicas).To(Equal(tc.out.replicas), "replicas")
-				Expect(sts.Status.Replicas).To(Equal(tc.out.statusReplicas), "status replicas")
-				Expect(sts.Annotations[ReplicasAnnotation]).To(Equal(tc.out.annotationReplica), "replicas annotation")
+				assert.Equal(*sts.Spec.Replicas, tc.out.replicas, "replicas")
+				assert.Equal(sts.Status.Replicas, tc.out.statusReplicas, "replicas")
+				require.NotNil(sts.Annotations, "replicas annotation")
+				assert.Equal(sts.Annotations[ReplicasAnnotation], tc.out.annotationReplica, "replicas annotation")
 			}
 		})
 	}
-})
+}
