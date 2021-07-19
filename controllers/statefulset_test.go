@@ -104,7 +104,8 @@ func TestStatefulSetScaledown(t *testing.T) {
 					Replicas: &tc.in.replicas,
 				},
 				Status: appsv1.StatefulSetStatus{
-					Replicas: tc.in.statusReplicas,
+					Replicas:        tc.in.statusReplicas,
+					CurrentRevision: "revision",
 				},
 			}
 

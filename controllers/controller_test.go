@@ -183,8 +183,6 @@ func TestController(t *testing.T) {
 					return pvc
 				})))
 			require.Nil(c.Create(ctx, sts))
-			sts.Status.Replicas = 0
-			sts.Status.CurrentReplicas = 0
 
 			// First scale down
 			r = 0
@@ -193,6 +191,9 @@ func TestController(t *testing.T) {
 				return stsExists(ctx, c, sts)
 			}, duration, interval)
 			require.Nil(c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
+			sts.Status.Replicas = 0
+			sts.Status.CurrentReplicas = 0
+			sts.Status.CurrentRevision = "revision"
 			require.Nil(c.Status().Update(ctx, sts)) // manualy do what k8s would do
 
 			// Check if backup is created

@@ -19,7 +19,10 @@ const ScalupAnnotation = "sts-resize.appuio.ch/scalup"
 // Might return an errInProgress, signaling that the scaling is not completed and the caller needs to backoff.
 // scaleDown will not update the actual kubernetes resource, but expects the caller to upate the StatefulSet.
 func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
-	if *sts.Spec.Replicas == 0 && sts.Status.Replicas == 0 {
+	if *sts.Spec.Replicas == 0 && sts.Status.Replicas == 0 && sts.Status.CurrentRevision != "" {
+		// NOTE(glrf) Checking CurrentRevision is important to prevent a race condition.
+		// This makes sure that the k8s controller manager ran before us and that the set status
+		// is correct and not just uninitialized
 		return sts, nil
 	}
 	// If we are in the process of scaling up. We do not need to scale down
