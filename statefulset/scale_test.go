@@ -1,4 +1,4 @@
-package controllers
+package statefulset
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestStatefulSetScaledown(t *testing.T) {
+func TestScaledown(t *testing.T) {
 	type state struct {
 		replicas          int32
 		annotationState   string
@@ -60,7 +60,7 @@ func TestStatefulSetScaledown(t *testing.T) {
 			},
 			done: false,
 		},
-		"should should proceed": {
+		"should proceed": {
 			in: state{
 				replicas:          0,
 				statusReplicas:    0,
@@ -109,12 +109,13 @@ func TestStatefulSetScaledown(t *testing.T) {
 				},
 			}
 
-			sts, err := scaleDown(sts)
-			if tc.done {
-				require.Nil(err)
-			} else {
-				require.ErrorIs(err, errInProgress)
+			si := Info{
+				sts: &sts,
 			}
+
+			done := si.ScaleDown()
+
+			assert.Equal(done, tc.done)
 			assert.Equal(*sts.Spec.Replicas, tc.out.replicas, "replicas")
 			assert.Equal(sts.Status.Replicas, tc.out.statusReplicas, "replicas")
 			require.NotNil(sts.Annotations, "replicas annotation")
@@ -123,7 +124,7 @@ func TestStatefulSetScaledown(t *testing.T) {
 	}
 }
 
-func TestStatefulSetScaleUp(t *testing.T) {
+func TestScaleUp(t *testing.T) {
 	type state struct {
 		replicas          int32
 		annotationState   string
@@ -163,7 +164,7 @@ func TestStatefulSetScaleUp(t *testing.T) {
 			},
 			done: false,
 		},
-		"should should proceed": {
+		"should proceed": {
 			in: state{
 				replicas:          4,
 				statusReplicas:    4,
@@ -194,6 +195,7 @@ func TestStatefulSetScaleUp(t *testing.T) {
 
 			sts := appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: k,
 					Annotations: map[string]string{
 						ReplicasAnnotation: tc.in.annotationReplica,
 					},
@@ -202,27 +204,26 @@ func TestStatefulSetScaleUp(t *testing.T) {
 					Replicas: &tc.in.replicas,
 				},
 				Status: appsv1.StatefulSetStatus{
-					Replicas: tc.in.statusReplicas,
+					Replicas:        tc.in.statusReplicas,
+					CurrentRevision: "revision",
 				},
 			}
-
-			sts, err := scaleUp(sts)
-			if tc.fail {
-				assert.NotNil(err)
-			} else {
-				if tc.done {
-					require.Nil(err)
-					require.NotNil(sts.Annotations, "annotation")
-					assert.Equal(sts.Annotations[ScalupAnnotation], "", "scaleup annotation")
-				} else {
-					require.ErrorIs(err, errInProgress)
-					assert.Equal(sts.Annotations[ScalupAnnotation], "true", "scaleup annotation")
-				}
-				assert.Equal(*sts.Spec.Replicas, tc.out.replicas, "replicas")
-				assert.Equal(sts.Status.Replicas, tc.out.statusReplicas, "replicas")
-				require.NotNil(sts.Annotations, "replicas annotation")
-				assert.Equal(sts.Annotations[ReplicasAnnotation], tc.out.annotationReplica, "replicas annotation")
+			si := Info{
+				sts: &sts,
 			}
+
+			done, err := si.ScaleUp()
+			if tc.fail {
+				assert.Error(err)
+				return
+			}
+
+			assert.Equal(tc.done, done, "is done")
+			assert.NotEqual(tc.done, si.isScalingUp(), "is still scaling up")
+			assert.Equal(*sts.Spec.Replicas, tc.out.replicas, "replicas")
+			assert.Equal(sts.Status.Replicas, tc.out.statusReplicas, "replicas")
+			require.NotNil(sts.Annotations, "replicas annotation")
+			assert.Equal(sts.Annotations[ReplicasAnnotation], tc.out.annotationReplica, "replicas annotation")
 		})
 	}
 }

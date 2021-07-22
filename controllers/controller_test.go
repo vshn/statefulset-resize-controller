@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vshn/statefulset-resize-controller/statefulset"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -84,7 +85,7 @@ func TestController(t *testing.T) {
 
 			consistently(t, func() bool {
 				return stsExists(ctx, c, sts)
-			}, duration, interval)
+			}, duration, interval, "Sts exists")
 
 		})
 		t.Run("Don't scale down failed StatfulSets", func(t *testing.T) {
@@ -98,7 +99,7 @@ func TestController(t *testing.T) {
 				},
 			}))
 			sts := newTestStatefulSet(ns, "test")
-			sts.Labels = map[string]string{FailedLabel: "true"}
+			sts.Labels = map[string]string{statefulset.FailedLabel: "true"}
 			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
@@ -174,7 +175,7 @@ func TestController(t *testing.T) {
 			r := int32(0)
 			sts.Spec.Replicas = &r
 			sts.Annotations = map[string]string{
-				ReplicasAnnotation: "3",
+				statefulset.ReplicasAnnotation: "3",
 			}
 
 			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
@@ -198,7 +199,7 @@ func TestController(t *testing.T) {
 
 			// Check if backup is created
 			bu := newBackup(ns, "data-test-0-backup-1g", "1G")
-			assert.Eventually(func() bool {
+			require.Eventually(func() bool {
 				return pvcExists(ctx, c, bu)
 			}, duration, interval)
 
@@ -215,7 +216,7 @@ func TestController(t *testing.T) {
 			require.Nil(c.Status().Update(ctx, job)) // manualy fail job
 
 			sts.Labels = map[string]string{}
-			sts.Labels[FailedLabel] = "true"
+			sts.Labels[statefulset.FailedLabel] = "true"
 			r = 3
 			sts.Spec.Replicas = &r
 			assert.Eventually(func() bool {

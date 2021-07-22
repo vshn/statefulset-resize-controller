@@ -1,68 +1,107 @@
-// Functions manipulating the statefulset
-
 package controllers
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"strconv"
+	"reflect"
 
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/vshn/statefulset-resize-controller/statefulset"
 )
 
-// ReplicasAnnotation stores the initial number of replicas before scaling down the StatefulSet.
-const ReplicasAnnotation = "sts-resize.appuio.ch/replicas"
-
-// ScalupAnnotation marks a replica as in the process of scaling back up and prevents the controller from scaling it down.
-const ScalupAnnotation = "sts-resize.appuio.ch/scalup"
-
-// scaleDown will scale the StatefulSet to 0.
-// Might return an errInProgress, signaling that the scaling is not completed and the caller needs to backoff.
-// scaleDown will not update the actual kubernetes resource, but expects the caller to upate the StatefulSet.
-func scaleDown(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
-	if *sts.Spec.Replicas == 0 && sts.Status.Replicas == 0 && sts.Status.CurrentRevision != "" {
-		// NOTE(glrf) Checking CurrentRevision is important to prevent a race condition.
-		// This makes sure that the k8s controller manager ran before us and that the set status
-		// is correct and not just uninitialized
-		return sts, nil
-	}
-	// If we are in the process of scaling up. We do not need to scale down
-	//
-	if sts.Annotations[ScalupAnnotation] == "true" {
-		return sts, nil
-	}
-	if sts.Annotations[ReplicasAnnotation] == "" {
-		if sts.Annotations == nil {
-			// shouldn't happen in practice, but let's not panic anyway
-			sts.Annotations = map[string]string{}
-		}
-		sts.Annotations[ReplicasAnnotation] = strconv.Itoa(int(*sts.Spec.Replicas))
-	}
-	z := int32(0)
-	sts.Spec.Replicas = &z
-	return sts, errInProgress
+// CriticalError is an unrecoverable error.
+type CriticalError struct {
+	Err           error
+	Event         string
+	SaveToScaleUp bool
 }
 
-// scaleUp will scale the StatefulSet to its original number of replicas.
-// Might return an errInProgress, signaling that the scaling is not completed and the caller needs to backoff.
-// scaleUp will not update the actual kubernetes resource, but expects the caller to upate the StatefulSet.
-// Expects to be called after scaleDown and that the original replica size is available as an annotation.
-func scaleUp(sts appsv1.StatefulSet) (appsv1.StatefulSet, error) {
-	scale, err := strconv.Atoi(sts.Annotations[ReplicasAnnotation])
-	if err != nil {
-		return sts, newErrCritical(fmt.Sprintf("failed to get original scale as %s is not readable", ReplicasAnnotation))
-	}
-	scale32 := int32(scale) // need to add this to be able to dereference the int32 version
-	if sts.Annotations == nil {
-		// shouldn't happen in practice, but let's not panic anyway
-		sts.Annotations = map[string]string{}
-	}
-	sts.Annotations[ScalupAnnotation] = "true"
+// Error implements the Error interface
+func (err CriticalError) Error() string {
+	return err.Err.Error()
+}
 
-	if *sts.Spec.Replicas == scale32 && sts.Status.Replicas == scale32 {
-		delete(sts.Annotations, ReplicasAnnotation)
-		delete(sts.Annotations, ScalupAnnotation)
-		return sts, nil
+// Unwrap is used to make it work with errors.Is, errors.As.
+func (err *CriticalError) Unwrap() error {
+	return err.Err
+}
+
+func isCritical(err error) *CriticalError {
+	cerr := CriticalError{}
+	if err != nil && errors.As(err, &cerr) {
+		return &cerr
 	}
-	sts.Spec.Replicas = &scale32
-	return sts, errInProgress
+	return nil
+}
+
+func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedName types.NamespacedName) (*statefulset.Info, error) {
+	old := &appsv1.StatefulSet{}
+	err := r.Get(ctx, namespacedName, old)
+	if err != nil {
+		return nil, client.IgnoreNotFound(err)
+	}
+	sts, err := statefulset.NewInfo(old)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(sts.Pvcs) == 0 {
+		sts.Pvcs, err = r.fetchResizablePVCs(ctx, *sts)
+		return sts, err
+	}
+	return sts, nil
+}
+
+func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *statefulset.Info) (bool, error) {
+	done := sts.ScaleDown()
+	if !done {
+		return done, r.updateStatefulSet(ctx, sts, nil)
+	}
+
+	for i, pvc := range sts.Pvcs {
+		pvc, d, err := r.resizePVC(ctx, pvc)
+		sts.Pvcs[i] = pvc
+		if err != nil {
+			return false, r.updateStatefulSet(ctx, sts, err)
+		}
+		if !d {
+			done = false
+		}
+	}
+	if !done {
+		return done, r.updateStatefulSet(ctx, sts, nil)
+	}
+
+	done, err := sts.ScaleUp()
+	return done, r.updateStatefulSet(ctx, sts, err)
+}
+
+func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statefulset.Info, err error) error {
+	sts, e := si.Sts()
+	if e != nil {
+		return err
+	}
+	l := log.FromContext(ctx).WithValues("statefulset", fmt.Sprintf("%s/%s", sts.Namespace, sts.Name))
+	if err != nil {
+		l.Error(err, "failed to resize statefulset")
+	}
+	if cerr := isCritical(err); cerr != nil {
+		si.SetFailed()
+		if cerr.SaveToScaleUp {
+			// If we fail here ther is not much to do
+			_, err = si.ScaleUp()
+		}
+		r.Recorder.Event(sts, "Warning", "ResizeFailed", cerr.Event)
+	}
+	if !reflect.DeepEqual(sts.Annotations, si.Old.Annotations) ||
+		!reflect.DeepEqual(sts.Spec, si.Old.Spec) ||
+		!reflect.DeepEqual(sts.Labels, si.Old.Labels) {
+		return r.Client.Update(ctx, sts)
+	}
+	return nil
 }

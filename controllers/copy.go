@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -11,43 +12,50 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKey, dst client.ObjectKey) error {
+// ManagedLabel is a label to mark resources to be managed by the controller
+const ManagedLabel = "sts-resize.appuio.ch/managed"
+
+func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKey, dst client.ObjectKey) (bool, error) {
 	if src.Namespace != dst.Namespace {
-		return newErrCritical("unable to copy across namespaces")
+		return false, errors.New("unable to copy across namespaces")
 	}
 
 	job := newJob(src.Namespace, r.SyncContainerImage, src.Name, dst.Name)
-	found := batchv1.Job{}
-	err := r.Client.Get(ctx, client.ObjectKeyFromObject(&job), &found)
-	if apierrors.IsNotFound(err) {
-		if err := r.Client.Create(ctx, &job); err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	} else {
-		job = found
+	job, err := r.getOrCreateJob(ctx, job)
+	if err != nil {
+		return false, err
 	}
 
 	stat := getJobStatus(job)
 	if stat == nil {
 		// Job still running
-		return errInProgress
+		return false, nil
 	}
-	switch *stat {
-	case batchv1.JobComplete:
+	if *stat == batchv1.JobComplete {
 		// We are done with this. Let's clean up the Job
 		// If we don't we won't be able to mount it in the next step
 		pol := metav1.DeletePropagationForeground
 		err := r.Client.Delete(ctx, &job, &client.DeleteOptions{
 			PropagationPolicy: &pol,
 		})
-		return err
-	case batchv1.JobFailed:
-		return newErrCritical(fmt.Sprintf("job %s failed", job.Name))
-	default:
-		return newErrCritical(fmt.Sprintf("job %s in unknown state", job.Name))
+		return true, err
 	}
+	if *stat == batchv1.JobFailed {
+		return true, CriticalError{Err: fmt.Errorf("job %s failed", job.Name)}
+	}
+	return true, CriticalError{Err: fmt.Errorf("job %s in unknown state", job.Name)}
+}
+
+func (r *StatefulSetReconciler) getOrCreateJob(ctx context.Context, job batchv1.Job) (batchv1.Job, error) {
+	found := batchv1.Job{}
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(&job), &found)
+	if apierrors.IsNotFound(err) {
+		return job, r.Client.Create(ctx, &job)
+	}
+	if err != nil {
+		return job, err
+	}
+	return found, nil
 }
 
 func newJob(namespace, image, src, dst string) batchv1.Job {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("Failed to get client for testEnv: %v", err)
 	}
-	m.Run()
+	os.Exit(m.Run())
 }
 
 // Some helper functions

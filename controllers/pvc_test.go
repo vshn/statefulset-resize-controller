@@ -242,7 +242,7 @@ func TestFilterResizablePVCs(t *testing.T) {
 	}
 
 	for k, tc := range tcs {
-		tc := tc // necessary because Ginkgo weirdness
+		tc := tc
 		t.Run(k, func(t *testing.T) {
 			assert := assert.New(t)
 
@@ -289,7 +289,7 @@ func TestFilterResizablePVCs(t *testing.T) {
 			rps := filterResizablePVCs(sts, pvcs)
 			assert.Len(rps, len(tc.out))
 			for _, r := range rps {
-				o, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.Name)]
+				o, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.SourceName)]
 				assert.True(ok)
 				assert.Equal(r.TargetSize.String(), o)
 			}

@@ -2,65 +2,51 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/vshn/statefulset-resize-controller/pvc"
+	"github.com/vshn/statefulset-resize-controller/statefulset"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ManagedLabel is a label to mark resources to be managed by the controller
-const ManagedLabel = "sts-resize.appuio.ch/managed"
-
-// DoneAnnotation is an annotation that either marks a backup as successful or an orignial as completely resized
-const DoneAnnotation = "sts-resize.appuio.ch/done"
-
-// pvcInfo describs a resizable PVC
-type pvcInfo struct {
-	Name       string
-	Namespace  string
-	Labels     map[string]string
-	Spec       corev1.PersistentVolumeClaimSpec
-	TargetSize resource.Quantity
-}
-
-func (pi pvcInfo) backupName() string {
-	q := pi.Spec.Resources.Requests[corev1.ResourceStorage] // Necessary because pointer receiver
-	return strings.ToLower(fmt.Sprintf("%s-backup-%s", pi.Name, q.String()))
-}
-
 // getResizablePVCs fetches the information of all PVCs that are smaller than the request of the statefulset
-func getResizablePVCs(ctx context.Context, c client.Reader, sts appsv1.StatefulSet) ([]pvcInfo, error) {
+func (r StatefulSetReconciler) fetchResizablePVCs(ctx context.Context, si statefulset.Info) ([]pvc.Info, error) {
 	// NOTE(glrf) This will get _all_ PVCs that belonged to the sts. Even the ones not used anymore (i.e. if scaled up and down).
-	pvcs := corev1.PersistentVolumeClaimList{}
-	if err := c.List(ctx, &pvcs, client.InNamespace(sts.Namespace), client.MatchingLabels(sts.Spec.Selector.MatchLabels)); err != nil {
+	sts, err := si.Sts()
+	if err != nil {
 		return nil, err
 	}
-	pis := filterResizablePVCs(sts, pvcs.Items)
+	pvcs := corev1.PersistentVolumeClaimList{}
+	if err := r.List(ctx, &pvcs, client.InNamespace(sts.Namespace), client.MatchingLabels(sts.Spec.Selector.MatchLabels)); err != nil {
+		return nil, err
+	}
+	pis := filterResizablePVCs(*sts, pvcs.Items)
 	return pis, nil
 }
 
 // filterResizablePVCs filters out the PVCs that do not match the request of the statefulset
-func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []pvcInfo {
+func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []pvc.Info {
 	// StS managed PVCs are created according to the VolumeClaimTemplate.
 	// The name of the resulting PVC will be in the following format:
 	// <template.name>-<sts.name>-<ordinal-number>
 	// This allows us to match the pvcs to the template.
 
-	var res []pvcInfo
+	var res []pvc.Info
 
-	for _, pvc := range pvcs {
-		if pvc.Namespace != sts.Namespace {
+	for _, p := range pvcs {
+		if p.Namespace != sts.Namespace {
 			continue
 		}
 		for _, tpl := range sts.Spec.VolumeClaimTemplates {
-			if !strings.HasPrefix(pvc.Name, tpl.Name) {
+			if !strings.HasPrefix(p.Name, tpl.Name) {
 				continue
 			}
-			n := strings.TrimPrefix(pvc.Name, fmt.Sprintf("%s-", tpl.Name))
+			n := strings.TrimPrefix(p.Name, fmt.Sprintf("%s-", tpl.Name))
 			if !strings.HasPrefix(n, sts.Name) {
 				continue
 			}
@@ -68,15 +54,9 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 			if _, err := strconv.Atoi(n); err != nil {
 				continue
 			}
-			q := pvc.Spec.Resources.Requests[corev1.ResourceStorage]            // Necessary because pointer receiver
+			q := p.Spec.Resources.Requests[corev1.ResourceStorage]
 			if q.Cmp(tpl.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 { // Returns -1 if q < requested size
-				res = append(res, pvcInfo{
-					Name:       pvc.Name,
-					Namespace:  pvc.Namespace,
-					Labels:     pvc.Labels,
-					TargetSize: tpl.Spec.Resources.Requests[corev1.ResourceStorage],
-					Spec:       pvc.Spec,
-				})
+				res = append(res, pvc.NewInfo(p, tpl.Spec.Resources.Requests[corev1.ResourceStorage]))
 				break
 			}
 		}
@@ -84,15 +64,23 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 	return res
 }
 
-// resizePVC is an idempotent function that will make sure the PVC in the pvcInfo will grow to the requested size.
-// This function might not run through successfully in a single run but may return an `errInProgress`, signifying
-// that the caller needs to retry later.
-func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvcInfo) error {
-	if err := r.backupPVC(ctx, pi); err != nil {
-		return err
+func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc.Info, bool, error) {
+	pi, done, err := r.backupPVC(ctx, pi)
+	if err != nil || !done {
+		cerr := CriticalError{}
+		if errors.As(err, &cerr) {
+			fmt.Println("Got crit error")
+			err = CriticalError{
+				Err:           err,
+				Event:         fmt.Sprintf("Failed to backup PVC %s", pi.SourceName),
+				SaveToScaleUp: true,
+			}
+		}
+		return pi, done, err
 	}
-	if err := r.restorePVC(ctx, pi); err != nil {
-		return err
+	pi, done, err = r.restorePVC(ctx, pi)
+	if err != nil || !done {
+		return pi, done, err
 	}
-	return nil
+	return pi, true, nil
 }
