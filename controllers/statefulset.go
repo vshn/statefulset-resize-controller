@@ -11,7 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/vshn/statefulset-resize-controller/pvc"
 	"github.com/vshn/statefulset-resize-controller/statefulset"
 )
 
@@ -59,44 +58,35 @@ func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedN
 }
 
 func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *statefulset.Info) (bool, error) {
+	var err error
+
 	done := sts.ScaleDown()
 	if !done {
 		return done, r.updateStatefulSet(ctx, sts, nil)
 	}
 
-	pis := []pvc.Info{}
-	for _, pi := range sts.Pvcs {
-		pi, d, err := r.resizePVC(ctx, pi)
-		if err != nil {
-			return false, r.updateStatefulSet(ctx, sts, err)
-		}
-		if !d {
-			pis = append(pis, pi)
-			done = false
-		}
-	}
-	sts.Pvcs = pis
-	if !done {
-		return done, r.updateStatefulSet(ctx, sts, nil)
+	sts.Pvcs, err = r.resizePVCs(ctx, sts.Pvcs)
+	if err != nil || len(sts.Pvcs) > 0 {
+		return len(sts.Pvcs) == 0, r.updateStatefulSet(ctx, sts, err)
 	}
 
-	done, err := sts.ScaleUp()
+	done, err = sts.ScaleUp()
 	return done, r.updateStatefulSet(ctx, sts, err)
 }
 
-func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statefulset.Info, err error) error {
-	sts, e := si.Sts()
-	if e != nil {
+func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statefulset.Info, resizeErr error) error {
+	sts, err := si.Sts()
+	if err != nil {
 		return err
 	}
 	l := log.FromContext(ctx).WithValues("statefulset", fmt.Sprintf("%s/%s", sts.Namespace, sts.Name))
-	if err != nil {
+	if resizeErr != nil {
 		l.Error(err, "failed to resize statefulset")
 	}
-	if cerr := isCritical(err); cerr != nil {
+	if cerr := isCritical(resizeErr); cerr != nil {
 		si.SetFailed()
 		if cerr.SaveToScaleUp {
-			// If we fail here ther is not much to do
+			// If we fail here there is not much to do
 			_, err = si.ScaleUp()
 		}
 		r.Recorder.Event(sts, "Warning", "ResizeFailed", cerr.Event)

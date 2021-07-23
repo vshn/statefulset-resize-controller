@@ -69,7 +69,6 @@ func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc
 	if err != nil || !done {
 		cerr := CriticalError{}
 		if errors.As(err, &cerr) {
-			fmt.Println("Got crit error")
 			err = CriticalError{
 				Err:           err,
 				Event:         fmt.Sprintf("Failed to backup PVC %s", pi.SourceName),
@@ -83,4 +82,19 @@ func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc
 		return pi, done, err
 	}
 	return pi, true, nil
+}
+
+func (r *StatefulSetReconciler) resizePVCs(ctx context.Context, oldPIs []pvc.Info) ([]pvc.Info, error) {
+	pis := []pvc.Info{}
+	for i, pi := range oldPIs {
+		pi, done, err := r.resizePVC(ctx, pi)
+		if err != nil {
+			pis = append(pis, oldPIs[i:]...)
+			return pis, err
+		}
+		if !done {
+			pis = append(pis, pi)
+		}
+	}
+	return pis, nil
 }
