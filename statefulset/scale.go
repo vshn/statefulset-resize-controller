@@ -29,7 +29,6 @@ func (s Info) ScaleUp() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to get original scale as %s is not readable: %w", ReplicasAnnotation, err)
 	}
-	fmt.Printf("Scale to %d\n", scale)
 	if s.scaledUp(scale) {
 		s.unmarkScalingUp()
 		s.clearOriginalReplicas()

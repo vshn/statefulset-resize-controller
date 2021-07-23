@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/vshn/statefulset-resize-controller/pvc"
 	"github.com/vshn/statefulset-resize-controller/statefulset"
 )
 
@@ -63,16 +64,18 @@ func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *state
 		return done, r.updateStatefulSet(ctx, sts, nil)
 	}
 
-	for i, pvc := range sts.Pvcs {
-		pvc, d, err := r.resizePVC(ctx, pvc)
-		sts.Pvcs[i] = pvc
+	pis := []pvc.Info{}
+	for _, pi := range sts.Pvcs {
+		pi, d, err := r.resizePVC(ctx, pi)
 		if err != nil {
 			return false, r.updateStatefulSet(ctx, sts, err)
 		}
 		if !d {
+			pis = append(pis, pi)
 			done = false
 		}
 	}
+	sts.Pvcs = pis
 	if !done {
 		return done, r.updateStatefulSet(ctx, sts, nil)
 	}
