@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/crc32"
+	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,24 +28,19 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 		return false, err
 	}
 
-	stat := getJobStatus(job)
-	if stat == nil {
-		// Job still running
-		return false, nil
+	done, err := isJobDone(job)
+	if err != nil {
+		return done, err
 	}
-	if *stat == batchv1.JobComplete {
-		// We are done with this. Let's clean up the Job
+	if done {
+		// Let's clean up the Job
 		// If we don't we won't be able to mount it in the next step
 		pol := metav1.DeletePropagationForeground
-		err := r.Client.Delete(ctx, &job, &client.DeleteOptions{
+		err = r.Client.Delete(ctx, &job, &client.DeleteOptions{
 			PropagationPolicy: &pol,
 		})
-		return true, err
 	}
-	if *stat == batchv1.JobFailed {
-		return true, CriticalError{Err: fmt.Errorf("job %s failed", job.Name)}
-	}
-	return true, CriticalError{Err: fmt.Errorf("job %s in unknown state", job.Name)}
+	return done, nil
 }
 
 func (r *StatefulSetReconciler) getOrCreateJob(ctx context.Context, job batchv1.Job) (batchv1.Job, error) {
@@ -58,11 +55,25 @@ func (r *StatefulSetReconciler) getOrCreateJob(ctx context.Context, job batchv1.
 	return found, nil
 }
 
+func newJobName(src, dst string) string {
+	maxNameLength := 27
+	src = shortenString(src, maxNameLength)
+	dst = shortenString(dst, maxNameLength)
+	return strings.ToLower(fmt.Sprintf("sync-%s-to-%s", src, dst))
+}
+func shortenString(s string, l int) string {
+	if len(s) <= l {
+		return s
+	}
+	h := crc32.NewIEEE()
+	h.Write([]byte(s))
+	return fmt.Sprintf("%s%08x", s[:l-8], h.Sum32())
+}
+
 func newJob(namespace, image, src, dst string) batchv1.Job {
-	name := fmt.Sprintf("sync-%s-to-%s", src, dst)
 	return batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      newJobName(src, dst),
 			Namespace: namespace,
 			Labels: map[string]string{
 				ManagedLabel: "true",
@@ -115,11 +126,14 @@ func newJob(namespace, image, src, dst string) batchv1.Job {
 	}
 }
 
-func getJobStatus(job batchv1.Job) *batchv1.JobConditionType {
+func isJobDone(job batchv1.Job) (bool, error) {
 	for _, cond := range job.Status.Conditions {
-		if cond.Type == batchv1.JobComplete || cond.Type == batchv1.JobFailed {
-			return &cond.Type
+		if cond.Type == batchv1.JobComplete {
+			return true, nil
+		}
+		if cond.Type == batchv1.JobFailed {
+			return true, CriticalError{Err: fmt.Errorf("job %s failed", job.Name)}
 		}
 	}
-	return nil
+	return false, nil
 }

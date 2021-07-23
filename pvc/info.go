@@ -2,6 +2,7 @@ package pvc
 
 import (
 	"fmt"
+	"hash/crc32"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -38,8 +39,19 @@ type Info struct {
 
 // BackupName return the name of the backup
 func (pi Info) BackupName() string {
-	q := pi.Spec.Resources.Requests[corev1.ResourceStorage] // Necessary because pointer receiver
-	return strings.ToLower(fmt.Sprintf("%s-backup-%s", pi.SourceName, q.String()))
+	maxNameLength := 63
+	q := pi.Spec.Resources.Requests[corev1.ResourceStorage]
+	suffix := fmt.Sprintf("-backup-%s", q.String())
+	name := shortenString(pi.SourceName, maxNameLength-len(suffix))
+	return strings.ToLower(fmt.Sprintf("%s%s", name, suffix))
+}
+func shortenString(s string, l int) string {
+	if len(s) <= l {
+		return s
+	}
+	h := crc32.NewIEEE()
+	h.Write([]byte(s))
+	return fmt.Sprintf("%s%08x", s[:l-8], h.Sum32())
 }
 
 // GetBackup returns a pvc resource for the backup
