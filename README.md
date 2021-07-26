@@ -12,8 +12,8 @@ The Statefulset Resize Controller is a Kubernetes operator to enable resizing PV
 Statefulsets have the option to provide one or more `volumeClaimTemplates`.
 For each of these `volumeClaimTemplates` k8s will create a persistent volume claim per pod.
 
-What Statefulsets do no support however, is updating these `volumeClaimTemplates`.
-Depending on the storage backends, PVCs are not mutable either and different features are or are not available.
+What Statefulsets do not support however, is updating these `volumeClaimTemplates`.
+Depending on the storage backends, PVCs are not mutable either and different features might or might not be available.
 This means increasing the storage size of a Statefulset involves quite a lot of manual steps.
 
 The Statefulset Resize Controller is general solution to this problem and does not require any additional support from the storage backend.
