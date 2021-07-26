@@ -21,13 +21,10 @@ func (r StatefulSetReconciler) backupPVC(ctx context.Context, pi pvc.Info) (pvc.
 	done, err := r.copyPVC(ctx,
 		client.ObjectKey{Name: pi.SourceName, Namespace: pi.Namespace},
 		client.ObjectKey{Name: pi.BackupName(), Namespace: pi.Namespace})
-	if err != nil || !done {
-		return pi, done, err
+	if err == nil && done {
+		pi.BackedUp = true
 	}
-
-	pi.BackedUp = true
-
-	return pi, true, nil
+	return pi, done, err
 }
 
 func (r StatefulSetReconciler) createBackupIfNotExists(ctx context.Context, pi pvc.Info) error {

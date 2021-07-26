@@ -67,8 +67,7 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc.Info, bool, error) {
 	pi, done, err := r.backupPVC(ctx, pi)
 	if err != nil || !done {
-		cerr := CriticalError{}
-		if errors.As(err, &cerr) {
+		if errors.As(err, &CriticalError{}) {
 			err = CriticalError{
 				Err:           err,
 				Event:         fmt.Sprintf("Failed to backup PVC %s", pi.SourceName),
@@ -77,11 +76,7 @@ func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc
 		}
 		return pi, done, err
 	}
-	pi, done, err = r.restorePVC(ctx, pi)
-	if err != nil || !done {
-		return pi, done, err
-	}
-	return pi, true, nil
+	return r.restorePVC(ctx, pi)
 }
 
 func (r *StatefulSetReconciler) resizePVCs(ctx context.Context, oldPIs []pvc.Info) ([]pvc.Info, error) {

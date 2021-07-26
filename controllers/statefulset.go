@@ -50,7 +50,7 @@ func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedN
 		return nil, err
 	}
 
-	if len(sts.Pvcs) == 0 {
+	if !sts.Resizing() {
 		sts.Pvcs, err = r.fetchResizablePVCs(ctx, *sts)
 		return sts, err
 	}
@@ -87,7 +87,9 @@ func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statef
 		si.SetFailed()
 		if cerr.SaveToScaleUp {
 			// If we fail here there is not much to do
-			_, err = si.ScaleUp()
+			if _, err = si.ScaleUp(); err != nil {
+				l.Error(err, "failed to scale up statefulset")
+			}
 		}
 		r.Recorder.Event(sts, "Warning", "ResizeFailed", cerr.Event)
 	}

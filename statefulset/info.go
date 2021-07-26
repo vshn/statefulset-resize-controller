@@ -27,13 +27,11 @@ func NewInfo(sts *appsv1.StatefulSet) (*Info, error) {
 	si := Info{}
 	si.sts = sts.DeepCopy()
 	si.Old = sts
-	// Todo setup parsing pvc infos etc
 	if sts.Annotations[PvcAnnotation] != "" {
 		if err := json.Unmarshal([]byte(sts.Annotations[PvcAnnotation]), &si.Pvcs); err != nil {
 			return nil, fmt.Errorf("Annotation %s malformed", PvcAnnotation)
 		}
 	}
-
 	return &si, nil
 }
 

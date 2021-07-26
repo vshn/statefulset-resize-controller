@@ -18,16 +18,13 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvc.Info) (pv
 		return pi, done, err
 	}
 
-	// Copy data from backup to resized original
 	done, err = r.copyPVC(ctx,
 		client.ObjectKey{Name: pi.BackupName(), Namespace: pi.Namespace},
 		client.ObjectKey{Name: pi.SourceName, Namespace: pi.Namespace})
-	if err != nil || !done {
-		return pi, done, err
+	if err == nil && done {
+		pi.Restored = true
 	}
-
-	pi.Restored = true
-	return pi, true, nil
+	return pi, done, err
 }
 
 func (r *StatefulSetReconciler) resizeSource(ctx context.Context, pi pvc.Info) (bool, error) {
@@ -36,16 +33,11 @@ func (r *StatefulSetReconciler) resizeSource(ctx context.Context, pi pvc.Info) (
 
 	err := r.Get(ctx, client.ObjectKeyFromObject(source), &found)
 	if apierrors.IsNotFound(err) {
-		// The PVC does not exist.
-		// Let's recreate it with the target size
 		return true, r.Create(ctx, source)
 	}
 	if err != nil {
 		return false, err
 	}
-	// There still is a pvc.
-	// Check if it it already large enough.
-	// If not delete and receate it
 	q := found.Spec.Resources.Requests[corev1.ResourceStorage]
 	if q.Cmp(pi.TargetSize) < 0 {
 		// The deletion might take a while to take effect.
