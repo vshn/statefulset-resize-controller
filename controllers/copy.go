@@ -61,6 +61,13 @@ func newJobName(src, dst string) string {
 	dst = shortenString(dst, maxNameLength)
 	return strings.ToLower(fmt.Sprintf("sync-%s-to-%s", src, dst))
 }
+
+// shortenString deterministically shortens the provided string to the maximum of l characters.
+// The function cannot shorten below a length of 8.
+// This needs to be deterministic, as we use it to find existing jobs.
+// It does this by taking the CRC32 has of the complete string, truncate the name to the first l-8 characters, and appending the hash in hex.
+// When using this function for jobs, if we have 10000 active jobs in one namespace, each copying between pvc that start with the same 19 letters, the likelihood of a collision, which would cause the resize operation to fail is about 1 in 10'000.
+// For 1000 active jobs, the likelihood is about 1 in 100'000'000.
 func shortenString(s string, l int) string {
 	if len(s) <= l {
 		return s
