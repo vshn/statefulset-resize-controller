@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -70,6 +71,7 @@ func main() {
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("statefulset-resize-controller"),
 		SyncContainerImage: syncContainerImage,
+		RequeueAfter:       10 * time.Second,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StatefulSet")
 		os.Exit(1)

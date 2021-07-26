@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,6 +47,7 @@ func TestController(t *testing.T) {
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("statefulset-resize-controller"),
 		SyncContainerImage: "test",
+		RequeueAfter:       time.Second,
 	}).SetupWithManager(mgr))
 	go func() {
 		req.Nil(mgr.Start(ctrl.SetupSignalHandler()))

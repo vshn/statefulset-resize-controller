@@ -19,6 +19,7 @@ type StatefulSetReconciler struct {
 	Recorder record.EventRecorder
 
 	SyncContainerImage string
+	RequeueAfter       time.Duration
 }
 
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
@@ -48,7 +49,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	if !done {
 		return ctrl.Result{
-			RequeueAfter: 2 * time.Second,
+			RequeueAfter: r.RequeueAfter,
 		}, nil
 	}
 	return ctrl.Result{}, nil
