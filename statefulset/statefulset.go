@@ -14,17 +14,17 @@ const FailedLabel = "sts-resize.appuio.ch/failed"
 // PvcAnnotation is an annotation in which the initial state of the pvcs is stored in
 const PvcAnnotation = "sts-resize.appuio.ch/pvcs"
 
-// Info contains all data to manage a statfulset resizing
-type Info struct {
+// Entity contains all data to manage a statfulset resizing
+type Entity struct {
 	Old  *appsv1.StatefulSet
-	Pvcs []pvc.Info
+	Pvcs []pvc.Entity
 
 	sts *appsv1.StatefulSet
 }
 
-// NewInfo return a new StatefulSet Info
-func NewInfo(sts *appsv1.StatefulSet) (*Info, error) {
-	si := Info{}
+// NewEntity return a new StatefulSet Info
+func NewEntity(sts *appsv1.StatefulSet) (*Entity, error) {
+	si := Entity{}
 	si.sts = sts.DeepCopy()
 	si.Old = sts
 	if sts.Annotations[PvcAnnotation] != "" {
@@ -36,7 +36,7 @@ func NewInfo(sts *appsv1.StatefulSet) (*Info, error) {
 }
 
 // Sts returns the updated StatefulSet resource
-func (s *Info) Sts() (*appsv1.StatefulSet, error) {
+func (s *Entity) Sts() (*appsv1.StatefulSet, error) {
 	annotation, err := json.Marshal(s.Pvcs)
 	if err != nil {
 		return nil, err
@@ -50,14 +50,14 @@ func (s *Info) Sts() (*appsv1.StatefulSet, error) {
 }
 
 // Failed returns wether we previously failed to resize this statefulset
-func (s Info) Failed() bool {
+func (s Entity) Failed() bool {
 	return s.sts != nil &&
 		s.sts.Labels != nil &&
 		s.sts.Labels[FailedLabel] == "true"
 }
 
 // SetFailed sets this statefulset to a failed state
-func (s Info) SetFailed() {
+func (s Entity) SetFailed() {
 	if s.sts.Labels == nil {
 		s.sts.Labels = map[string]string{}
 	}
@@ -65,6 +65,6 @@ func (s Info) SetFailed() {
 }
 
 // Resizing returns wether we are resizing or should be resizing this statefulset
-func (s Info) Resizing() bool {
+func (s Entity) Resizing() bool {
 	return len(s.Pvcs) != 0
 }

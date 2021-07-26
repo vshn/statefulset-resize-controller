@@ -36,7 +36,7 @@ func TestBackup(t *testing.T) {
 	}
 	for k, tc := range tcs {
 		t.Run(k, func(t *testing.T) {
-			pi := Info{
+			pi := Entity{
 				Namespace:  tc.namespace,
 				SourceName: tc.name,
 				Spec: corev1.PersistentVolumeClaimSpec{

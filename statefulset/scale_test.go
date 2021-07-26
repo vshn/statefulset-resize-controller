@@ -108,7 +108,7 @@ func TestScaledown(t *testing.T) {
 				},
 			}
 
-			si := Info{
+			si := Entity{
 				sts: &sts,
 			}
 
@@ -207,7 +207,7 @@ func TestScaleUp(t *testing.T) {
 					CurrentRevision: "revision",
 				},
 			}
-			si := Info{
+			si := Entity{
 				sts: &sts,
 			}
 

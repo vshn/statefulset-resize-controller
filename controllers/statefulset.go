@@ -39,13 +39,13 @@ func isCritical(err error) *CriticalError {
 	return nil
 }
 
-func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedName types.NamespacedName) (*statefulset.Info, error) {
+func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedName types.NamespacedName) (*statefulset.Entity, error) {
 	old := &appsv1.StatefulSet{}
 	err := r.Get(ctx, namespacedName, old)
 	if err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
-	sts, err := statefulset.NewInfo(old)
+	sts, err := statefulset.NewEntity(old)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedN
 	return sts, nil
 }
 
-func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *statefulset.Info) (bool, error) {
+func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *statefulset.Entity) (bool, error) {
 	var err error
 
 	done := sts.PrepareScaleDown()
@@ -74,7 +74,7 @@ func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *state
 	return done, r.updateStatefulSet(ctx, sts, err)
 }
 
-func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statefulset.Info, resizeErr error) error {
+func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statefulset.Entity, resizeErr error) error {
 	sts, err := si.Sts()
 	if err != nil {
 		return err

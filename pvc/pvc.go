@@ -13,9 +13,9 @@ import (
 // ManagedLabel is a label to mark resources to be managed by the controller
 const ManagedLabel = "sts-resize.appuio.ch/managed"
 
-// NewInfo returns a new pvc Info
-func NewInfo(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity) Info {
-	return Info{
+// NewEntity returns a new pvc Info
+func NewEntity(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity) Entity {
+	return Entity{
 		SourceName: pvc.Name,
 		Namespace:  pvc.Namespace,
 		Labels:     pvc.Labels,
@@ -24,8 +24,8 @@ func NewInfo(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity) Info {
 	}
 }
 
-// Info describs a resizable PVC
-type Info struct {
+// Entity describs a resizable PVC
+type Entity struct {
 	Namespace  string
 	SourceName string
 
@@ -38,7 +38,7 @@ type Info struct {
 }
 
 // BackupName return the name of the backup
-func (pi Info) BackupName() string {
+func (pi Entity) BackupName() string {
 	maxNameLength := 63
 	q := pi.Spec.Resources.Requests[corev1.ResourceStorage]
 	suffix := fmt.Sprintf("-backup-%s", q.String())
@@ -66,7 +66,7 @@ func shortenString(s string, l int) string {
 }
 
 // GetBackup returns a pvc resource for the backup
-func (pi Info) GetBackup() *corev1.PersistentVolumeClaim {
+func (pi Entity) GetBackup() *corev1.PersistentVolumeClaim {
 	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pi.BackupName(),
@@ -85,7 +85,7 @@ func (pi Info) GetBackup() *corev1.PersistentVolumeClaim {
 }
 
 // GetResizedSource returns a pvc resource for the enlarged original PVC
-func (pi Info) GetResizedSource() *corev1.PersistentVolumeClaim {
+func (pi Entity) GetResizedSource() *corev1.PersistentVolumeClaim {
 	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pi.SourceName,

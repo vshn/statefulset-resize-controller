@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r StatefulSetReconciler) backupPVC(ctx context.Context, pi pvc.Info) (pvc.Info, bool, error) {
+func (r StatefulSetReconciler) backupPVC(ctx context.Context, pi pvc.Entity) (pvc.Entity, bool, error) {
 	if pi.BackedUp {
 		return pi, true, nil
 	}
@@ -27,7 +27,7 @@ func (r StatefulSetReconciler) backupPVC(ctx context.Context, pi pvc.Info) (pvc.
 	return pi, done, err
 }
 
-func (r StatefulSetReconciler) createBackupIfNotExists(ctx context.Context, pi pvc.Info) error {
+func (r StatefulSetReconciler) createBackupIfNotExists(ctx context.Context, pi pvc.Entity) error {
 	found := corev1.PersistentVolumeClaim{}
 	err := r.Get(ctx, client.ObjectKey{Name: pi.BackupName(), Namespace: pi.Namespace}, &found)
 	if apierrors.IsNotFound(err) {

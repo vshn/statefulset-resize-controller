@@ -13,7 +13,7 @@ const ScalupAnnotation = "sts-resize.appuio.ch/scalup"
 
 // PrepareScaleDown changes the replica to 0, if applicable.
 // It saves the original state and returns true if it ran successfully before and the StatefulSet is scaled to 0.
-func (s *Info) PrepareScaleDown() bool {
+func (s *Entity) PrepareScaleDown() bool {
 	if s.isScaledDown() || s.isScalingUp() {
 		return true
 	}
@@ -25,7 +25,7 @@ func (s *Info) PrepareScaleDown() bool {
 
 // PrepareScaleUp updates the replica count to the original replicas.
 // Returns true if it ran successfully before and the StatefulSet is scaled up.
-func (s Info) PrepareScaleUp() (bool, error) {
+func (s Entity) PrepareScaleUp() (bool, error) {
 	scale, err := s.getOriginalReplicaCount()
 	if err != nil {
 		return false, fmt.Errorf("failed to get original scale as %s is not readable: %w", ReplicasAnnotation, err)
@@ -40,7 +40,7 @@ func (s Info) PrepareScaleUp() (bool, error) {
 	return false, nil
 }
 
-func (s Info) isScaledDown() bool {
+func (s Entity) isScaledDown() bool {
 	// NOTE(glrf) Checking CurrentRevision is important to prevent a race condition.
 	// This makes sure that the k8s controller manager ran before us and that the set status is correct and not just uninitialized
 	return s.sts.Spec.Replicas != nil &&
@@ -49,14 +49,14 @@ func (s Info) isScaledDown() bool {
 		s.sts.Status.Replicas == 0
 }
 
-func (s Info) isScaledUp(scale int32) bool {
+func (s Entity) isScaledUp(scale int32) bool {
 	return s.sts.Spec.Replicas != nil &&
 		*s.sts.Spec.Replicas == scale &&
 		s.sts.Status.CurrentRevision != "" &&
 		s.sts.Status.Replicas == scale
 }
 
-func (s Info) saveOriginalReplicaCount() {
+func (s Entity) saveOriginalReplicaCount() {
 	if s.sts.Annotations[ReplicasAnnotation] == "" {
 		if s.sts.Annotations == nil {
 			s.sts.Annotations = map[string]string{}
@@ -65,7 +65,7 @@ func (s Info) saveOriginalReplicaCount() {
 	}
 }
 
-func (s Info) getOriginalReplicaCount() (int32, error) {
+func (s Entity) getOriginalReplicaCount() (int32, error) {
 	scale, err := strconv.Atoi(s.sts.Annotations[ReplicasAnnotation])
 	if err != nil {
 		return 0, err
@@ -73,21 +73,21 @@ func (s Info) getOriginalReplicaCount() (int32, error) {
 	return int32(scale), nil
 }
 
-func (s Info) clearOriginalReplicaCount() {
+func (s Entity) clearOriginalReplicaCount() {
 	delete(s.sts.Annotations, ReplicasAnnotation)
 }
 
-func (s *Info) markScalingUp() {
+func (s *Entity) markScalingUp() {
 	if s.sts.Annotations == nil {
 		s.sts.Annotations = map[string]string{}
 	}
 	s.sts.Annotations[ScalupAnnotation] = "true"
 }
 
-func (s Info) isScalingUp() bool {
+func (s Entity) isScalingUp() bool {
 	return s.sts.Annotations[ScalupAnnotation] == "true"
 }
 
-func (s *Info) unmarkScalingUp() {
+func (s *Entity) unmarkScalingUp() {
 	delete(s.sts.Annotations, ScalupAnnotation)
 }

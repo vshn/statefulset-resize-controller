@@ -9,7 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvc.Info) (pvc.Info, bool, error) {
+func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvc.Entity) (pvc.Entity, bool, error) {
 	if pi.Restored {
 		return pi, true, nil
 	}
@@ -27,7 +27,7 @@ func (r *StatefulSetReconciler) restorePVC(ctx context.Context, pi pvc.Info) (pv
 	return pi, done, err
 }
 
-func (r *StatefulSetReconciler) resizeSource(ctx context.Context, pi pvc.Info) (bool, error) {
+func (r *StatefulSetReconciler) resizeSource(ctx context.Context, pi pvc.Entity) (bool, error) {
 	found := corev1.PersistentVolumeClaim{}
 	source := pi.GetResizedSource()
 

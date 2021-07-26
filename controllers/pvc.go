@@ -15,7 +15,7 @@ import (
 )
 
 // getResizablePVCs fetches the information of all PVCs that are smaller than the request of the statefulset
-func (r StatefulSetReconciler) fetchResizablePVCs(ctx context.Context, si statefulset.Info) ([]pvc.Info, error) {
+func (r StatefulSetReconciler) fetchResizablePVCs(ctx context.Context, si statefulset.Entity) ([]pvc.Entity, error) {
 	// NOTE(glrf) This will get _all_ PVCs that belonged to the sts. Even the ones not used anymore (i.e. if scaled up and down).
 	sts, err := si.Sts()
 	if err != nil {
@@ -30,13 +30,13 @@ func (r StatefulSetReconciler) fetchResizablePVCs(ctx context.Context, si statef
 }
 
 // filterResizablePVCs filters out the PVCs that do not match the request of the statefulset
-func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []pvc.Info {
+func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeClaim) []pvc.Entity {
 	// StS managed PVCs are created according to the VolumeClaimTemplate.
 	// The name of the resulting PVC will be in the following format:
 	// <template.name>-<sts.name>-<ordinal-number>
 	// This allows us to match the pvcs to the template.
 
-	var res []pvc.Info
+	var res []pvc.Entity
 
 	for _, p := range pvcs {
 		if p.Namespace != sts.Namespace {
@@ -44,7 +44,7 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 		}
 		for _, tpl := range sts.Spec.VolumeClaimTemplates {
 			if isPVCTooSmall(p, tpl, sts.Name) {
-				res = append(res, pvc.NewInfo(p, tpl.Spec.Resources.Requests[corev1.ResourceStorage]))
+				res = append(res, pvc.NewEntity(p, tpl.Spec.Resources.Requests[corev1.ResourceStorage]))
 				break
 			}
 		}
@@ -75,7 +75,7 @@ func isGreaterStorageRequest(p, tpl corev1.PersistentVolumeClaim) bool {
 	return q.Cmp(tpl.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 // Returns -1 if q < requested size
 }
 
-func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc.Info, bool, error) {
+func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Entity) (pvc.Entity, bool, error) {
 	pi, done, err := r.backupPVC(ctx, pi)
 	if err != nil || !done {
 		if errors.As(err, &CriticalError{}) {
@@ -90,8 +90,8 @@ func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc
 	return r.restorePVC(ctx, pi)
 }
 
-func (r *StatefulSetReconciler) resizePVCs(ctx context.Context, oldPIs []pvc.Info) ([]pvc.Info, error) {
-	pis := []pvc.Info{}
+func (r *StatefulSetReconciler) resizePVCs(ctx context.Context, oldPIs []pvc.Entity) ([]pvc.Entity, error) {
+	pis := []pvc.Entity{}
 	for i, pi := range oldPIs {
 		pi, done, err := r.resizePVC(ctx, pi)
 		if err != nil {
