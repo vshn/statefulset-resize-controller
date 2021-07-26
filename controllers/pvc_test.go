@@ -26,6 +26,13 @@ func TestFilterResizablePVCs(t *testing.T) {
 		namespace string
 		size      string
 	}
+	newPVCIn := func(name, namespace, size string) pvcIn {
+		return pvcIn{
+			name:      name,
+			namespace: namespace,
+			size:      size,
+		}
+	}
 	type tCase struct {
 		sts  stsIn
 		pvcs []pvcIn
@@ -45,16 +52,8 @@ func TestFilterResizablePVCs(t *testing.T) {
 				},
 			},
 			pvcs: []pvcIn{
-				{
-					name:      "data-test-0",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "data-test-1",
-					namespace: "foo",
-					size:      "1G",
-				},
+				newPVCIn("data-test-0", "foo", "1G"),
+				newPVCIn("data-test-1", "foo", "1G"),
 			},
 			out: map[string]string{},
 		},
@@ -70,16 +69,8 @@ func TestFilterResizablePVCs(t *testing.T) {
 				},
 			},
 			pvcs: []pvcIn{
-				{
-					name:      "data-test-0",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "data-test-1",
-					namespace: "foo",
-					size:      "1G",
-				},
+				newPVCIn("data-test-0", "foo", "1G"),
+				newPVCIn("data-test-1", "foo", "1G"),
 			},
 			out: map[string]string{
 				"foo:data-test-0": "10G",
@@ -98,16 +89,8 @@ func TestFilterResizablePVCs(t *testing.T) {
 				},
 			},
 			pvcs: []pvcIn{
-				{
-					name:      "data-test-0",
-					namespace: "bar",
-					size:      "1G",
-				},
-				{
-					name:      "data-test-1",
-					namespace: "bar",
-					size:      "1G",
-				},
+				newPVCIn("data-test-0", "bar", "1G"),
+				newPVCIn("data-test-1", "bar", "1G"),
 			},
 			out: map[string]string{},
 		},
@@ -127,26 +110,10 @@ func TestFilterResizablePVCs(t *testing.T) {
 				},
 			},
 			pvcs: []pvcIn{
-				{
-					name:      "data-test-0",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "data-test-1",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "log-test-0",
-					namespace: "foo",
-					size:      "15G",
-				},
-				{
-					name:      "log-test-1",
-					namespace: "foo",
-					size:      "15G",
-				},
+				newPVCIn("data-test-0", "foo", "1G"),
+				newPVCIn("data-test-1", "foo", "1G"),
+				newPVCIn("log-test-0", "foo", "15G"),
+				newPVCIn("log-test-1", "foo", "15G"),
 			},
 			out: map[string]string{
 				"foo:data-test-0": "10G",
@@ -171,31 +138,11 @@ func TestFilterResizablePVCs(t *testing.T) {
 				},
 			},
 			pvcs: []pvcIn{
-				{
-					name:      "data-test-0",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "data-test-1",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "data-prod-1",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "log-test-other-0", // template "log-test" from StS "other"
-					namespace: "foo",
-					size:      "10G",
-				},
-				{
-					name:      "log-test-other-1",
-					namespace: "foo",
-					size:      "10G",
-				},
+				newPVCIn("data-test-0", "foo", "1G"),
+				newPVCIn("data-test-1", "foo", "1G"),
+				newPVCIn("data-prod-1", "foo", "1G"),
+				newPVCIn("log-test-other-0", "foo", "10G"), // template "log-test" from StS "other"
+				newPVCIn("log-test-other-1", "foo", "10G"), // template "log-test" from StS "other"
 			},
 			out: map[string]string{
 				"foo:data-test-0": "10G",
@@ -218,21 +165,9 @@ func TestFilterResizablePVCs(t *testing.T) {
 				},
 			},
 			pvcs: []pvcIn{
-				{
-					name:      "data-test-0",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "data-test-1",
-					namespace: "foo",
-					size:      "1G",
-				},
-				{
-					name:      "log-test-pvc", // unrelated pvc someone created
-					namespace: "foo",
-					size:      "10G",
-				},
+				newPVCIn("data-test-0", "foo", "1G"),
+				newPVCIn("data-test-1", "foo", "1G"),
+				newPVCIn("log-test-pvc", "foo", "10G"), // unrelated pvc someone created
 			},
 			out: map[string]string{
 				"foo:data-test-0": "10G",

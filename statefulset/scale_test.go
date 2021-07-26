@@ -89,7 +89,6 @@ func TestScaledown(t *testing.T) {
 		},
 	}
 	for k, tc := range tcs {
-		tc := tc // necessary because Ginkgo weirdness
 		t.Run(k, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
@@ -113,7 +112,7 @@ func TestScaledown(t *testing.T) {
 				sts: &sts,
 			}
 
-			done := si.ScaleDown()
+			done := si.PrepareScaleDown()
 
 			assert.Equal(done, tc.done)
 			assert.Equal(*sts.Spec.Replicas, tc.out.replicas, "replicas")
@@ -212,7 +211,7 @@ func TestScaleUp(t *testing.T) {
 				sts: &sts,
 			}
 
-			done, err := si.ScaleUp()
+			done, err := si.PrepareScaleUp()
 			if tc.fail {
 				assert.Error(err)
 				return

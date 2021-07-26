@@ -60,7 +60,7 @@ func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedN
 func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *statefulset.Info) (bool, error) {
 	var err error
 
-	done := sts.ScaleDown()
+	done := sts.PrepareScaleDown()
 	if !done {
 		return done, r.updateStatefulSet(ctx, sts, nil)
 	}
@@ -70,7 +70,7 @@ func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *state
 		return len(sts.Pvcs) == 0, r.updateStatefulSet(ctx, sts, err)
 	}
 
-	done, err = sts.ScaleUp()
+	done, err = sts.PrepareScaleUp()
 	return done, r.updateStatefulSet(ctx, sts, err)
 }
 
@@ -87,7 +87,7 @@ func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statef
 		si.SetFailed()
 		if cerr.SaveToScaleUp {
 			// If we fail here there is not much to do
-			if _, err = si.ScaleUp(); err != nil {
+			if _, err = si.PrepareScaleUp(); err != nil {
 				l.Error(err, "failed to scale up statefulset")
 			}
 		}

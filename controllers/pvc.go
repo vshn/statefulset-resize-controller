@@ -43,25 +43,36 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 			continue
 		}
 		for _, tpl := range sts.Spec.VolumeClaimTemplates {
-			if !strings.HasPrefix(p.Name, tpl.Name) {
-				continue
-			}
-			n := strings.TrimPrefix(p.Name, fmt.Sprintf("%s-", tpl.Name))
-			if !strings.HasPrefix(n, sts.Name) {
-				continue
-			}
-			n = strings.TrimPrefix(n, fmt.Sprintf("%s-", sts.Name))
-			if _, err := strconv.Atoi(n); err != nil {
-				continue
-			}
-			q := p.Spec.Resources.Requests[corev1.ResourceStorage]
-			if q.Cmp(tpl.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 { // Returns -1 if q < requested size
+			if isPVCTooSmall(p, tpl, sts.Name) {
 				res = append(res, pvc.NewInfo(p, tpl.Spec.Resources.Requests[corev1.ResourceStorage]))
 				break
 			}
 		}
 	}
 	return res
+}
+
+func isPVCTooSmall(p, tpl corev1.PersistentVolumeClaim, stsName string) bool {
+	if !strings.HasPrefix(p.Name, tpl.Name) {
+		return false
+	}
+	n := strings.TrimPrefix(p.Name, fmt.Sprintf("%s-", tpl.Name))
+
+	if !strings.HasPrefix(n, stsName) {
+		return false
+	}
+	n = strings.TrimPrefix(n, fmt.Sprintf("%s-", stsName))
+
+	if _, err := strconv.Atoi(n); err != nil {
+		return false
+	}
+	return isGreaterStorageRequest(p, tpl)
+
+}
+
+func isGreaterStorageRequest(p, tpl corev1.PersistentVolumeClaim) bool {
+	q := p.Spec.Resources.Requests[corev1.ResourceStorage]
+	return q.Cmp(tpl.Spec.Resources.Requests[corev1.ResourceStorage]) < 0 // Returns -1 if q < requested size
 }
 
 func (r *StatefulSetReconciler) resizePVC(ctx context.Context, pi pvc.Info) (pvc.Info, bool, error) {
