@@ -2,8 +2,9 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,10 +23,6 @@ import (
 func TestController(t *testing.T) {
 	// Setup separate test env and start controller
 	req := require.New(t)
-
-	timeout := time.Second * 10
-	duration := time.Second * 4
-	interval := time.Millisecond * 300
 
 	testEnv = &envtest.Environment{}
 	conf, err := testEnv.Start()
@@ -65,18 +62,8 @@ func TestController(t *testing.T) {
 					Name: ns,
 				},
 			}))
-			sts := newTestStatefulSet(ns, "test")
+			sts := newTestStatefulSet(ns, "test", 1, "2G")
 			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "2G",
-				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-					pvc.Labels = sts.Spec.Selector.MatchLabels
-					return pvc
-				})))
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-1", "2G",
-				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-					pvc.Labels = sts.Spec.Selector.MatchLabels
-					return pvc
-				})))
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-2", "2G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
@@ -98,19 +85,9 @@ func TestController(t *testing.T) {
 					Name: ns,
 				},
 			}))
-			sts := newTestStatefulSet(ns, "test")
+			sts := newTestStatefulSet(ns, "test", 1, "2G")
 			sts.Labels = map[string]string{statefulset.FailedLabel: "true"}
 			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
-				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-					pvc.Labels = sts.Spec.Selector.MatchLabels
-					return pvc
-				})))
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-1", "1G",
-				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-					pvc.Labels = sts.Spec.Selector.MatchLabels
-					return pvc
-				})))
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-2", "2G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
@@ -123,105 +100,161 @@ func TestController(t *testing.T) {
 
 		})
 
-		t.Run("Scale down recreated StatfulSets", func(t *testing.T) {
+		t.Run("Resize StatfulSet", func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			ns := "e2e3"
-			assert := assert.New(t)
 			require := require.New(t)
 			require.Nil(c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
 			}))
-			sts := newTestStatefulSet(ns, "test")
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
+			sts := newTestStatefulSet(ns, "test", 1, "2G")
+			pvc := newSource(ns, "data-test-0", "1G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
-				})))
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-1", "1G",
-				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-					pvc.Labels = sts.Spec.Selector.MatchLabels
-					return pvc
-				})))
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-2", "1G",
-				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-					pvc.Labels = sts.Spec.Selector.MatchLabels
-					return pvc
-				})))
-
+				})
+			require.Nil(c.Create(ctx, pvc))
 			require.Nil(c.Create(ctx, sts))
-			r := int32(0)
-			sts.Spec.Replicas = &r
-			assert.Eventually(func() bool {
-				return stsExists(ctx, c, sts)
-			}, duration, interval)
 
+			t.Run("Scale down", func(t *testing.T) {
+				eventuallyScaledDown(t, ctx, c, sts)
+			})
+			t.Run("Back up", func(t *testing.T) {
+				eventuallyBackedUp(t, ctx, c, pvc, true)
+			})
+			t.Run("Restored", func(t *testing.T) {
+				eventuallyRestored(t, ctx, c, pvc, "2G")
+			})
+			t.Run("Scale up", func(t *testing.T) {
+				eventuallyScaledUp(t, ctx, c, sts, 1)
+			})
 		})
 
 		t.Run("Fail and scale up StatfulSets if Backup job failed", func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			ns := "e2e4"
-			assert := assert.New(t)
-			require := require.New(t)
-			require.Nil(c.Create(ctx, &corev1.Namespace{
+			require.Nil(t, c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
 			}))
-			sts := newTestStatefulSet(ns, "test")
-			r := int32(0)
-			sts.Spec.Replicas = &r
-			sts.Annotations = map[string]string{
-				statefulset.ReplicasAnnotation: "3",
-			}
-
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
+			sts := newTestStatefulSet(ns, "test", 1, "2G")
+			pvc := newSource(ns, "data-test-0", "1G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
-				})))
-			require.Nil(c.Create(ctx, sts))
+				})
+			require.Nil(t, c.Create(ctx, pvc))
+			require.Nil(t, c.Create(ctx, sts))
 
-			// First scale down
-			r = 0
-			sts.Spec.Replicas = &r
-			assert.Eventually(func() bool {
-				return stsExists(ctx, c, sts)
-			}, duration, interval)
-			require.Nil(c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
-			sts.Status.Replicas = 0
-			sts.Status.CurrentReplicas = 0
-			sts.Status.CurrentRevision = "revision"
-			require.Nil(c.Status().Update(ctx, sts)) // manualy do what k8s would do
-
-			// Check if backup is created
-			bu := newBackup(ns, "data-test-0-backup-1g", "1G")
-			require.Eventually(func() bool {
-				return pvcExists(ctx, c, bu)
-			}, duration, interval)
-
-			job := newTestJob(ns,
-				client.ObjectKey{Namespace: ns, Name: "data-test-0"},
-				client.ObjectKey{Namespace: ns, Name: bu.Name},
-				"test", &jobFailed)
-			jobStatus := job.Status
-			assert.Eventually(func() bool {
-				return jobExists(ctx, c, job)
-			}, duration, interval)
-			require.Nil(c.Get(ctx, client.ObjectKeyFromObject(job), job))
-			job.Status = jobStatus
-			require.Nil(c.Status().Update(ctx, job)) // manualy fail job
-
-			sts.Labels = map[string]string{}
-			sts.Labels[statefulset.FailedLabel] = "true"
-			r = 3
-			sts.Spec.Replicas = &r
-			assert.Eventually(func() bool {
-				return stsExists(ctx, c, sts)
-			}, timeout, interval)
+			t.Run("Scale down", func(t *testing.T) {
+				eventuallyScaledDown(t, ctx, c, sts)
+			})
+			t.Run("Back up failed", func(t *testing.T) {
+				eventuallyBackedUp(t, ctx, c, pvc, false)
+			})
+			t.Run("Scale up", func(t *testing.T) {
+				eventuallyScaledUp(t, ctx, c, sts, 1)
+			})
+			t.Run("Mark as failed", func(t *testing.T) {
+				require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
+				require.Equal(t, sts.Labels[statefulset.FailedLabel], "true")
+			})
 		})
 	})
+}
+
+func eventuallyScaledDown(t *testing.T, ctx context.Context, c client.Client, sts *appsv1.StatefulSet) bool {
+	ok := assert.Eventually(t, func() bool {
+		found := &appsv1.StatefulSet{}
+		key := client.ObjectKeyFromObject(sts)
+		if err := c.Get(ctx, key, found); err != nil {
+			return false
+		}
+		return *found.Spec.Replicas == 0
+	}, duration, interval)
+	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
+	sts.Status.Replicas = 0
+	sts.Status.CurrentReplicas = 0
+	sts.Status.CurrentRevision = "revision"
+	require.Nil(t, c.Status().Update(ctx, sts)) // manualy do what k8s would do
+	return ok
+}
+func eventuallyScaledUp(t *testing.T, ctx context.Context, c client.Client, sts *appsv1.StatefulSet, replicas int32) bool {
+	ok := assert.Eventually(t, func() bool {
+		found := &appsv1.StatefulSet{}
+		key := client.ObjectKeyFromObject(sts)
+		if err := c.Get(ctx, key, found); err != nil {
+			return false
+		}
+		return *found.Spec.Replicas == replicas
+	}, duration, interval)
+	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
+	sts.Status.Replicas = replicas
+	sts.Status.CurrentReplicas = replicas
+	sts.Status.CurrentRevision = "revision"
+	require.Nil(t, c.Status().Update(ctx, sts)) // manualy do what k8s would do
+	return ok
+}
+func eventuallyBackedUp(t *testing.T, ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, successful bool) bool {
+	// Check if backup is created
+	bname := strings.ToLower(fmt.Sprintf("%s-backup-1g", pvc.Name))
+	bu := newBackup(pvc.Namespace, bname, "1G")
+	require.Eventually(t, func() bool {
+		return pvcExists(ctx, c, bu)
+	}, duration, interval)
+
+	jobState := jobSucceeded
+	if !successful {
+		jobState = jobFailed
+	}
+	job := newTestJob(pvc.Namespace,
+		client.ObjectKey{Namespace: pvc.Namespace, Name: pvc.Name},
+		client.ObjectKey{Namespace: bu.Namespace, Name: bu.Name},
+		"test", &jobState)
+	jobStatus := job.Status
+	ok := assert.Eventually(t, func() bool {
+		return jobExists(ctx, c, job)
+	}, duration, interval)
+	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(job), job))
+	job.Status = jobStatus
+	require.Nil(t, c.Status().Update(ctx, job)) // manualy succeed or fail job
+	return ok
+}
+
+func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, size string) bool {
+	require.Eventually(t, func() bool {
+		return pvcNotExists(ctx, c, pvc)
+	}, duration, interval, "pvc removed")
+	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(pvc), pvc))
+	pvc.Finalizers = nil
+	require.Nil(t, c.Update(ctx, pvc))
+
+	pvc = newSource(pvc.Namespace, "data-test-0", size,
+		func(p *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
+			p.Labels = pvc.Labels
+			return p
+		})
+
+	require.Eventually(t, func() bool {
+		return pvcExists(ctx, c, pvc)
+	}, duration, interval)
+
+	bname := strings.ToLower(fmt.Sprintf("%s-backup-1g", pvc.Name))
+	job := newTestJob(pvc.Namespace,
+		client.ObjectKey{Namespace: pvc.Namespace, Name: bname},
+		client.ObjectKey{Namespace: pvc.Namespace, Name: pvc.Name},
+		"test", &jobSucceeded)
+	jobStatus := job.Status
+	ok := assert.Eventually(t, func() bool {
+		return jobExists(ctx, c, job)
+	}, duration, interval)
+	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(job), job))
+	job.Status = jobStatus
+	require.Nil(t, c.Status().Update(ctx, job)) // manualy succeed job
+	return ok
 }

@@ -22,6 +22,10 @@ import (
 	//+kubebuilder:scaffold:imports
 )
 
+var timeout = time.Second * 10
+var duration = time.Second * 4
+var interval = time.Millisecond * 300
+
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
@@ -32,7 +36,6 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("Failed to start testEnv: %v", err)
 	}
-	defer testEnv.Stop()
 
 	err = appsv1.AddToScheme(scheme.Scheme)
 	if err != nil {
@@ -43,7 +46,9 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("Failed to get client for testEnv: %v", err)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	testEnv.Stop()
+	os.Exit(code)
 }
 
 // Some helper functions
@@ -182,8 +187,7 @@ func newTestJob(namespace string, src, dst client.ObjectKey, image string, state
 	return job
 }
 
-func newTestStatefulSet(namespace, name string) *appsv1.StatefulSet {
-	replicas := int32(3)
+func newTestStatefulSet(namespace, name string, replicas int32, size string) *appsv1.StatefulSet {
 	l := map[string]string{
 		"app": name,
 	}
@@ -218,7 +222,7 @@ func newTestStatefulSet(namespace, name string) *appsv1.StatefulSet {
 					Spec: corev1.PersistentVolumeClaimSpec{
 						Resources: corev1.ResourceRequirements{
 							Requests: map[corev1.ResourceName]resource.Quantity{
-								corev1.ResourceStorage: resource.MustParse("2G"),
+								corev1.ResourceStorage: resource.MustParse(size),
 							},
 						},
 						AccessModes: []corev1.PersistentVolumeAccessMode{

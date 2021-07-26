@@ -48,7 +48,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	if !done {
 		return ctrl.Result{
-			RequeueAfter: 5 * time.Second,
+			RequeueAfter: 2 * time.Second,
 		}, nil
 	}
 	return ctrl.Result{}, nil
