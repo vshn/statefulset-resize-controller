@@ -1,11 +1,10 @@
+//+build integration
+
 package controllers
 
 import (
 	"context"
 	"fmt"
-	"log"
-	"os"
-	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -15,41 +14,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	//+kubebuilder:scaffold:imports
 )
 
 var timeout = time.Second * 10
 var duration = time.Second * 4
 var interval = time.Millisecond * 300
-
-var cfg *rest.Config
-var k8sClient client.Client
-var testEnv *envtest.Environment
-
-func TestMain(m *testing.M) {
-	testEnv = &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil {
-		log.Fatalf("Failed to start testEnv: %v", err)
-	}
-
-	err = appsv1.AddToScheme(scheme.Scheme)
-	if err != nil {
-		log.Fatalf("Failed to add scheme to testEnv: %v", err)
-	}
-
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	if err != nil {
-		log.Fatalf("Failed to get client for testEnv: %v", err)
-	}
-	code := m.Run()
-	testEnv.Stop()
-	os.Exit(code)
-}
 
 // Some helper functions
 func newSource(namespace, name, size string, fs ...func(*corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
@@ -265,15 +236,6 @@ func jobExists(ctx context.Context, c client.Client, other *batchv1.Job) bool {
 	return assert.ObjectsAreEqual(job.Spec.Template.Spec.Containers, other.Spec.Template.Spec.Containers) &&
 		assert.ObjectsAreEqual(job.Spec.Template.Spec.Volumes, other.Spec.Template.Spec.Volumes) &&
 		assert.ObjectsAreEqual(job.Labels, other.Labels)
-}
-
-func jobNotExists(ctx context.Context, c client.Client, other *batchv1.Job) bool {
-	job := &batchv1.Job{}
-	key := client.ObjectKeyFromObject(other)
-	err := c.Get(ctx, key, job)
-	// This is needed as the testenv does not properly clean up jobs
-	// Their stuck as there is a finalizer to remove pods
-	return apierrors.IsNotFound(err) || (err == nil && job.DeletionTimestamp != nil)
 }
 
 func stsExists(ctx context.Context, c client.Client, other *appsv1.StatefulSet) bool {

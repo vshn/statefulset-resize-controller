@@ -17,13 +17,17 @@ run: fmt vet ## Run against the configured Kubernetes cluster in ~/.kube/config
 	go run ./main.go
 
 .PHONY: test
-test: export ENVTEST_K8S_VERSION = 1.19.x
 test: fmt  ## Run tests 
+	go test -tags="" ./... -coverprofile cover.out
+
+.PHONY: integration-test
+integration-test: export ENVTEST_K8S_VERSION = 1.19.x
+integration-test: ## Run integration tests with envtest
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	$(setup-envtest) use '$(ENVTEST_K8S_VERSION)!'
 	export KUBEBUILDER_ASSETS="$$($(setup-envtest) use -i -p path '$(ENVTEST_K8S_VERSION)!')"; \
 		env | grep KUBEBUILDER; \
-	go test ./... -coverprofile cover.out
+		go test -tags=integration ./... -coverprofile cover.out
 
 .PHONY: fmt
 fmt: generate ## Run go fmt against code

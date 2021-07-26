@@ -1,3 +1,5 @@
+//+build integration
+
 package controllers
 
 import (
@@ -24,7 +26,7 @@ func TestController(t *testing.T) {
 	// Setup separate test env and start controller
 	req := require.New(t)
 
-	testEnv = &envtest.Environment{}
+	testEnv := &envtest.Environment{}
 	conf, err := testEnv.Start()
 	req.Nil(err)
 	defer testEnv.Stop()
