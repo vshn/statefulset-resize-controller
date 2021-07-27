@@ -187,7 +187,6 @@ func TestScaleUp(t *testing.T) {
 		},
 	}
 	for k, tc := range tcs {
-		tc := tc // necessary because Ginkgo weirdness
 		t.Run(k, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)

@@ -75,7 +75,7 @@ func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *state
 }
 
 func (r StatefulSetReconciler) updateStatefulSet(ctx context.Context, si *statefulset.Entity, resizeErr error) error {
-	sts, err := si.Sts()
+	sts, err := si.StatefulSet()
 	if err != nil {
 		return err
 	}

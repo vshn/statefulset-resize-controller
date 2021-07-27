@@ -35,8 +35,8 @@ func NewEntity(sts *appsv1.StatefulSet) (*Entity, error) {
 	return &si, nil
 }
 
-// Sts returns the updated StatefulSet resource
-func (s *Entity) Sts() (*appsv1.StatefulSet, error) {
+// StatefulSet returns the updated StatefulSet resource
+func (s *Entity) StatefulSet() (*appsv1.StatefulSet, error) {
 	annotation, err := json.Marshal(s.Pvcs)
 	if err != nil {
 		return nil, err

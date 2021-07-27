@@ -17,7 +17,7 @@ import (
 // getResizablePVCs fetches the information of all PVCs that are smaller than the request of the statefulset
 func (r StatefulSetReconciler) fetchResizablePVCs(ctx context.Context, si statefulset.Entity) ([]pvc.Entity, error) {
 	// NOTE(glrf) This will get _all_ PVCs that belonged to the sts. Even the ones not used anymore (i.e. if scaled up and down).
-	sts, err := si.Sts()
+	sts, err := si.StatefulSet()
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +53,7 @@ func filterResizablePVCs(sts appsv1.StatefulSet, pvcs []corev1.PersistentVolumeC
 }
 
 func isPVCTooSmall(p, tpl corev1.PersistentVolumeClaim, stsName string) bool {
+	//TODO Test this separately
 	if !strings.HasPrefix(p.Name, tpl.Name) {
 		return false
 	}
@@ -67,7 +68,6 @@ func isPVCTooSmall(p, tpl corev1.PersistentVolumeClaim, stsName string) bool {
 		return false
 	}
 	return isGreaterStorageRequest(p, tpl)
-
 }
 
 func isGreaterStorageRequest(p, tpl corev1.PersistentVolumeClaim) bool {
