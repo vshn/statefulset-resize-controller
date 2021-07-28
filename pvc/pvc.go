@@ -2,9 +2,9 @@ package pvc
 
 import (
 	"fmt"
-	"hash/crc64"
 	"strings"
 
+	"github.com/vshn/statefulset-resize-controller/naming"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,27 +42,9 @@ func (pi Entity) BackupName() string {
 	maxNameLength := 63
 	q := pi.Spec.Resources.Requests[corev1.ResourceStorage]
 	suffix := fmt.Sprintf("-backup-%s", q.String())
-	name := shortenString(pi.SourceName, maxNameLength-len(suffix))
+	// The ignored error is impossible
+	name, _ := naming.ShortenName(pi.SourceName, maxNameLength-len(suffix))
 	return strings.ToLower(fmt.Sprintf("%s%s", name, suffix))
-}
-
-var crc64Table = crc64.MakeTable(crc64.ISO)
-
-// shortenString deterministically shortens the provided string to the maximum of l characters.
-// The function cannot shorten below a length of 16.
-// This needs to be deterministic, as we use it to find existing backup pvcs.
-// It does this by taking the CRC64 has of the complete string, truncate the name to the first l-16 characters, and appending the hash in hex.
-// When using this function for backup pvcs, if we have 100'000 backups of pvcs, that start with the same ~37 letters, that are longer than ~53 letters, and have the same size, in one namespace, the likelihood of a collision, which would cause old backups to be overwritten is less than 1 in 1 Billion.
-func shortenString(s string, l int) string {
-	if len(s) <= l {
-		return s
-	}
-	if l < 16 {
-		return s
-	}
-	h := crc64.New(crc64Table)
-	h.Write([]byte(s))
-	return fmt.Sprintf("%s%16x", s[:l-16], h.Sum64())
 }
 
 // GetBackup returns a pvc resource for the backup

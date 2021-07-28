@@ -203,7 +203,7 @@ func newTestStatfulSet(replicaAnnotation, scaleUpAnnotation string, replicas, st
 		ObjectMeta: metav1.ObjectMeta{
 			Annotations: map[string]string{
 				ReplicasAnnotation: replicaAnnotation,
-				ScalupAnnotation:   scaleUpAnnotation,
+				ScaleUpAnnotation:  scaleUpAnnotation,
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{

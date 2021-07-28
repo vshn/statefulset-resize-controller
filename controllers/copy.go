@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"strings"
 
+	"github.com/vshn/statefulset-resize-controller/naming"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -57,24 +57,10 @@ func (r *StatefulSetReconciler) getOrCreateJob(ctx context.Context, job batchv1.
 
 func newJobName(src, dst string) string {
 	maxNameLength := 27
-	src = shortenString(src, maxNameLength)
-	dst = shortenString(dst, maxNameLength)
+	// The ignored errors are impossible
+	src, _ = naming.ShortenName(src, maxNameLength)
+	dst, _ = naming.ShortenName(dst, maxNameLength)
 	return strings.ToLower(fmt.Sprintf("sync-%s-to-%s", src, dst))
-}
-
-// shortenString deterministically shortens the provided string to the maximum of l characters.
-// The function cannot shorten below a length of 8.
-// This needs to be deterministic, as we use it to find existing jobs.
-// It does this by taking the CRC32 has of the complete string, truncate the name to the first l-8 characters, and appending the hash in hex.
-// When using this function for jobs, if we have 10000 active jobs in one namespace, each copying between pvc that start with the same 19 letters, the likelihood of a collision, which would cause the resize operation to fail is about 1 in 10'000.
-// For 1000 active jobs, the likelihood is about 1 in 100'000'000.
-func shortenString(s string, l int) string {
-	if len(s) <= l {
-		return s
-	}
-	h := crc32.NewIEEE()
-	h.Write([]byte(s))
-	return fmt.Sprintf("%s%08x", s[:l-8], h.Sum32())
 }
 
 func newJob(namespace, image, src, dst string) batchv1.Job {

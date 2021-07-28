@@ -8,8 +8,8 @@ import (
 // ReplicasAnnotation stores the initial number of replicas before scaling down the StatefulSet.
 const ReplicasAnnotation = "sts-resize.appuio.ch/replicas"
 
-// ScalupAnnotation marks a replica as in the process of scaling back up and prevents the controller from scaling it down.
-const ScalupAnnotation = "sts-resize.appuio.ch/scalup"
+// ScaleUpAnnotation marks a replica as in the process of scaling back up and prevents the controller from scaling it down.
+const ScaleUpAnnotation = "sts-resize.appuio.ch/scalup"
 
 // PrepareScaleDown changes the replica to 0, if applicable.
 // It saves the original state and returns true if it ran successfully before and the StatefulSet is scaled to 0.
@@ -81,13 +81,13 @@ func (s *Entity) markScalingUp() {
 	if s.sts.Annotations == nil {
 		s.sts.Annotations = map[string]string{}
 	}
-	s.sts.Annotations[ScalupAnnotation] = "true"
+	s.sts.Annotations[ScaleUpAnnotation] = "true"
 }
 
 func (s Entity) isScalingUp() bool {
-	return s.sts.Annotations[ScalupAnnotation] == "true"
+	return s.sts.Annotations[ScaleUpAnnotation] == "true"
 }
 
 func (s *Entity) unmarkScalingUp() {
-	delete(s.sts.Annotations, ScalupAnnotation)
+	delete(s.sts.Annotations, ScaleUpAnnotation)
 }
