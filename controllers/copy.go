@@ -135,6 +135,9 @@ func newJob(namespace, image, src, dst string) batchv1.Job {
 
 func isJobDone(job batchv1.Job) (bool, error) {
 	for _, cond := range job.Status.Conditions {
+		if cond.Status != corev1.ConditionTrue {
+			continue
+		}
 		if cond.Type == batchv1.JobComplete {
 			return true, nil
 		}

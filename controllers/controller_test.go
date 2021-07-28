@@ -29,14 +29,13 @@ func TestController(t *testing.T) {
 
 	testEnv := &envtest.Environment{}
 	conf, err := testEnv.Start()
-	req.Nil(err)
+	req.NoError(err)
 	defer testEnv.Stop()
 
 	s := runtime.NewScheme()
-	err = appsv1.AddToScheme(s)
-	err = corev1.AddToScheme(s)
-	err = batchv1.AddToScheme(s)
-	req.Nil(err)
+	req.NoError(appsv1.AddToScheme(s))
+	req.NoError(corev1.AddToScheme(s))
+	req.NoError(batchv1.AddToScheme(s))
 
 	mgr, err := ctrl.NewManager(conf, ctrl.Options{
 		Scheme: s,
@@ -49,8 +48,10 @@ func TestController(t *testing.T) {
 		SyncContainerImage: "test",
 		RequeueAfter:       time.Second,
 	}).SetupWithManager(mgr))
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
 	go func() {
-		req.Nil(mgr.Start(ctrl.SetupSignalHandler()))
+		req.Nil(mgr.Start(ctx))
 	}()
 
 	c := mgr.GetClient()
