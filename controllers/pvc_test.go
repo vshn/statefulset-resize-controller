@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -221,7 +222,8 @@ func TestFilterResizablePVCs(t *testing.T) {
 				})
 			}
 
-			rps := filterResizablePVCs(sts, pvcs)
+			ctx := context.Background()
+			rps := filterResizablePVCs(ctx, sts, pvcs)
 			assert.Len(rps, len(tc.out))
 			for _, r := range rps {
 				o, ok := tc.out[fmt.Sprintf("%s:%s", r.Namespace, r.SourceName)]

@@ -22,7 +22,6 @@ var timeout = time.Second * 10
 var duration = time.Second * 4
 var interval = time.Millisecond * 300
 
-// Some helper functions
 func newSource(namespace, name, size string, fs ...func(*corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 	volumeMode := corev1.PersistentVolumeFilesystem
 	pvc := &corev1.PersistentVolumeClaim{
@@ -247,6 +246,8 @@ func stsExists(ctx context.Context, c client.Client, other *appsv1.StatefulSet) 
 	return assert.ObjectsAreEqual(sts.Spec, other.Spec) && assert.ObjectsAreEqual(sts.Labels, other.Labels)
 }
 
+// Only succeeds if the condition is valid for `waitFor` time.
+// Checks the condition every `tick`
 func consistently(t assert.TestingT, condition func() bool, waitFor time.Duration, tick time.Duration, msgAndArgs ...interface{}) bool {
 	after := time.After(waitFor)
 

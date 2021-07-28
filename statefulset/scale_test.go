@@ -92,22 +92,7 @@ func TestScaledown(t *testing.T) {
 		t.Run(k, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			sts := appsv1.StatefulSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						ReplicasAnnotation: tc.in.annotationReplica,
-						ScalupAnnotation:   tc.in.annotationScaleUp,
-					},
-				},
-				Spec: appsv1.StatefulSetSpec{
-					Replicas: &tc.in.replicas,
-				},
-				Status: appsv1.StatefulSetStatus{
-					Replicas:        tc.in.statusReplicas,
-					CurrentRevision: "revision",
-				},
-			}
-
+			sts := newTestStatfulSet(tc.in.annotationReplica, tc.in.annotationScaleUp, tc.in.replicas, tc.in.statusReplicas)
 			si := Entity{
 				sts: &sts,
 			}
@@ -191,21 +176,7 @@ func TestScaleUp(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 
-			sts := appsv1.StatefulSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: k,
-					Annotations: map[string]string{
-						ReplicasAnnotation: tc.in.annotationReplica,
-					},
-				},
-				Spec: appsv1.StatefulSetSpec{
-					Replicas: &tc.in.replicas,
-				},
-				Status: appsv1.StatefulSetStatus{
-					Replicas:        tc.in.statusReplicas,
-					CurrentRevision: "revision",
-				},
-			}
+			sts := newTestStatfulSet(tc.in.annotationReplica, "", tc.in.replicas, tc.in.statusReplicas)
 			si := Entity{
 				sts: &sts,
 			}
@@ -215,6 +186,7 @@ func TestScaleUp(t *testing.T) {
 				assert.Error(err)
 				return
 			}
+			assert.NoError(err)
 
 			assert.Equal(tc.done, done, "is done")
 			assert.NotEqual(tc.done, si.isScalingUp(), "is still scaling up")
@@ -224,4 +196,23 @@ func TestScaleUp(t *testing.T) {
 			assert.Equal(sts.Annotations[ReplicasAnnotation], tc.out.annotationReplica, "replicas annotation")
 		})
 	}
+}
+
+func newTestStatfulSet(replicaAnnotation, scaleUpAnnotation string, replicas, statusReplicas int32) appsv1.StatefulSet {
+	return appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				ReplicasAnnotation: replicaAnnotation,
+				ScalupAnnotation:   scaleUpAnnotation,
+			},
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: &replicas,
+		},
+		Status: appsv1.StatefulSetStatus{
+			Replicas:        statusReplicas,
+			CurrentRevision: "revision",
+		},
+	}
+
 }

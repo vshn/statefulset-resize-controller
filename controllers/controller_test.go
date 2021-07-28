@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+
 	"github.com/vshn/statefulset-resize-controller/statefulset"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -19,42 +21,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 // E2Eish test against test env
 func TestController(t *testing.T) {
-	// Setup separate test env and start controller
-	req := require.New(t)
-
-	testEnv := &envtest.Environment{}
-	conf, err := testEnv.Start()
-	req.NoError(err)
-	defer testEnv.Stop()
-
-	s := runtime.NewScheme()
-	req.NoError(appsv1.AddToScheme(s))
-	req.NoError(corev1.AddToScheme(s))
-	req.NoError(batchv1.AddToScheme(s))
-
-	mgr, err := ctrl.NewManager(conf, ctrl.Options{
-		Scheme: s,
-	})
-	req.Nil(err)
-	req.Nil((&StatefulSetReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		Recorder:           mgr.GetEventRecorderFor("statefulset-resize-controller"),
-		SyncContainerImage: "test",
-		RequeueAfter:       time.Second,
-	}).SetupWithManager(mgr))
-	ctx, cancel := context.WithCancel(context.TODO())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() {
-		req.Nil(mgr.Start(ctx))
-	}()
-
-	c := mgr.GetClient()
+	c, stop := startTestReconciler(t, ctx)
+	defer stop()
 
 	t.Run("e2e", func(t *testing.T) { // This allows the subtest to run in parallel
 		t.Run("Don't scale down correct StatfulSets", func(t *testing.T) {
@@ -62,18 +36,18 @@ func TestController(t *testing.T) {
 			ctx := context.Background()
 			ns := "e2e1"
 			require := require.New(t)
-			require.Nil(c.Create(ctx, &corev1.Namespace{
+			require.NoError(c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
 			}))
 			sts := newTestStatefulSet(ns, "test", 1, "2G")
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "2G",
+			require.NoError(c.Create(ctx, newSource(ns, "data-test-0", "2G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
 				})))
-			require.Nil(c.Create(ctx, sts))
+			require.NoError(c.Create(ctx, sts))
 
 			consistently(t, func() bool {
 				return stsExists(ctx, c, sts)
@@ -85,19 +59,19 @@ func TestController(t *testing.T) {
 			ctx := context.Background()
 			ns := "e2e2"
 			require := require.New(t)
-			require.Nil(c.Create(ctx, &corev1.Namespace{
+			require.NoError(c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
 			}))
 			sts := newTestStatefulSet(ns, "test", 1, "2G")
 			sts.Labels = map[string]string{statefulset.FailedLabel: "true"}
-			require.Nil(c.Create(ctx, newSource(ns, "data-test-0", "1G",
+			require.NoError(c.Create(ctx, newSource(ns, "data-test-0", "1G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
 				})))
-			require.Nil(c.Create(ctx, sts))
+			require.NoError(c.Create(ctx, sts))
 
 			consistently(t, func() bool {
 				return stsExists(ctx, c, sts)
@@ -110,7 +84,7 @@ func TestController(t *testing.T) {
 			ctx := context.Background()
 			ns := "e2e3"
 			require := require.New(t)
-			require.Nil(c.Create(ctx, &corev1.Namespace{
+			require.NoError(c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
@@ -121,8 +95,8 @@ func TestController(t *testing.T) {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
 				})
-			require.Nil(c.Create(ctx, pvc))
-			require.Nil(c.Create(ctx, sts))
+			require.NoError(c.Create(ctx, pvc))
+			require.NoError(c.Create(ctx, sts))
 
 			t.Run("Scale down", func(t *testing.T) {
 				eventuallyScaledDown(t, ctx, c, sts)
@@ -142,7 +116,7 @@ func TestController(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			ns := "e2e4"
-			require.Nil(t, c.Create(ctx, &corev1.Namespace{
+			require.NoError(t, c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ns,
 				},
@@ -153,8 +127,8 @@ func TestController(t *testing.T) {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
 					return pvc
 				})
-			require.Nil(t, c.Create(ctx, pvc))
-			require.Nil(t, c.Create(ctx, sts))
+			require.NoError(t, c.Create(ctx, pvc))
+			require.NoError(t, c.Create(ctx, sts))
 
 			t.Run("Scale down", func(t *testing.T) {
 				eventuallyScaledDown(t, ctx, c, sts)
@@ -166,7 +140,7 @@ func TestController(t *testing.T) {
 				eventuallyScaledUp(t, ctx, c, sts, 1)
 			})
 			t.Run("Mark as failed", func(t *testing.T) {
-				require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
+				require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
 				require.Equal(t, sts.Labels[statefulset.FailedLabel], "true")
 			})
 		})
@@ -182,11 +156,11 @@ func eventuallyScaledDown(t *testing.T, ctx context.Context, c client.Client, st
 		}
 		return *found.Spec.Replicas == 0
 	}, duration, interval)
-	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
 	sts.Status.Replicas = 0
 	sts.Status.CurrentReplicas = 0
 	sts.Status.CurrentRevision = "revision"
-	require.Nil(t, c.Status().Update(ctx, sts)) // manualy do what k8s would do
+	require.NoError(t, c.Status().Update(ctx, sts)) // manualy do what k8s would do
 	return ok
 }
 func eventuallyScaledUp(t *testing.T, ctx context.Context, c client.Client, sts *appsv1.StatefulSet, replicas int32) bool {
@@ -198,11 +172,11 @@ func eventuallyScaledUp(t *testing.T, ctx context.Context, c client.Client, sts 
 		}
 		return *found.Spec.Replicas == replicas
 	}, duration, interval)
-	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
 	sts.Status.Replicas = replicas
 	sts.Status.CurrentReplicas = replicas
 	sts.Status.CurrentRevision = "revision"
-	require.Nil(t, c.Status().Update(ctx, sts)) // manualy do what k8s would do
+	require.NoError(t, c.Status().Update(ctx, sts)) // manualy do what k8s would do
 	return ok
 }
 func eventuallyBackedUp(t *testing.T, ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, successful bool) bool {
@@ -225,9 +199,9 @@ func eventuallyBackedUp(t *testing.T, ctx context.Context, c client.Client, pvc 
 	ok := assert.Eventually(t, func() bool {
 		return jobExists(ctx, c, job)
 	}, duration, interval)
-	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(job), job))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(job), job))
 	job.Status = jobStatus
-	require.Nil(t, c.Status().Update(ctx, job)) // manualy succeed or fail job
+	require.NoError(t, c.Status().Update(ctx, job)) // manualy succeed or fail job
 	return ok
 }
 
@@ -235,9 +209,9 @@ func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc 
 	require.Eventually(t, func() bool {
 		return pvcNotExists(ctx, c, pvc)
 	}, duration, interval, "pvc removed")
-	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(pvc), pvc))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(pvc), pvc))
 	pvc.Finalizers = nil
-	require.Nil(t, c.Update(ctx, pvc))
+	require.NoError(t, c.Update(ctx, pvc))
 
 	pvc = newSource(pvc.Namespace, "data-test-0", size,
 		func(p *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
@@ -258,8 +232,39 @@ func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc 
 	ok := assert.Eventually(t, func() bool {
 		return jobExists(ctx, c, job)
 	}, duration, interval)
-	require.Nil(t, c.Get(ctx, client.ObjectKeyFromObject(job), job))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(job), job))
 	job.Status = jobStatus
-	require.Nil(t, c.Status().Update(ctx, job)) // manualy succeed job
+	require.NoError(t, c.Status().Update(ctx, job)) // manualy succeed job
 	return ok
+}
+
+// startTestReconciler sets up a separate test env and starts the controller
+func startTestReconciler(t *testing.T, ctx context.Context) (client.Client, func() error) {
+	req := require.New(t)
+
+	testEnv := &envtest.Environment{}
+	conf, err := testEnv.Start()
+	req.NoError(err)
+
+	s := runtime.NewScheme()
+	req.NoError(appsv1.AddToScheme(s))
+	req.NoError(corev1.AddToScheme(s))
+	req.NoError(batchv1.AddToScheme(s))
+
+	mgr, err := ctrl.NewManager(conf, ctrl.Options{
+		Scheme: s,
+	})
+	req.NoError(err)
+	req.NoError((&StatefulSetReconciler{
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		Recorder:           mgr.GetEventRecorderFor("statefulset-resize-controller"),
+		SyncContainerImage: "test",
+		RequeueAfter:       time.Second,
+	}).SetupWithManager(mgr))
+	go func() {
+		req.NoError(mgr.Start(ctx))
+	}()
+
+	return mgr.GetClient(), testEnv.Stop
 }

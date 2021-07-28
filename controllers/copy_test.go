@@ -7,8 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewJob(t *testing.T) {
+var regexValidKubeName = regexp.MustCompile("^[a-z0-9]([-a-z0-9]*[a-z0-9])?")
 
+func TestNewJob(t *testing.T) {
 	assert := assert.New(t)
 
 	tcs := map[string]struct {
@@ -38,9 +39,8 @@ func TestNewJob(t *testing.T) {
 			assert.Equal(job.Spec.Template.Spec.Containers[0].Image, tc.image)
 			assert.Equal(job.Namespace, tc.namespace)
 
-			assert.Regexp(regexp.MustCompile("^[a-z0-9]([-a-z0-9]*[a-z0-9])?"), job.Name)
+			assert.Regexp(regexValidKubeName, job.Name)
 			assert.LessOrEqual(len(job.Name), 63)
-
 		})
 	}
 
