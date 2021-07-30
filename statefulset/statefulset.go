@@ -9,10 +9,10 @@ import (
 )
 
 // FailedLabel is a label for failed sts resizing that need human interaction
-const FailedLabel = "sts-resize.appuio.ch/failed"
+const FailedLabel = "sts-resize.vshn.net/failed"
 
 // PvcAnnotation is an annotation in which the initial state of the pvcs is stored in
-const PvcAnnotation = "sts-resize.appuio.ch/pvcs"
+const PvcAnnotation = "sts-resize.vshn.net/pvcs"
 
 // Entity contains all data to manage a statfulset resizing
 type Entity struct {

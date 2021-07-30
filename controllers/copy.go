@@ -15,7 +15,7 @@ import (
 )
 
 // ManagedLabel is a label to mark resources to be managed by the controller
-const ManagedLabel = "sts-resize.appuio.ch/managed"
+const ManagedLabel = "sts-resize.vshn.net/managed"
 
 func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKey, dst client.ObjectKey) (bool, error) {
 	if src.Namespace != dst.Namespace {

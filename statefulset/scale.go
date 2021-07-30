@@ -6,10 +6,10 @@ import (
 )
 
 // ReplicasAnnotation stores the initial number of replicas before scaling down the StatefulSet.
-const ReplicasAnnotation = "sts-resize.appuio.ch/replicas"
+const ReplicasAnnotation = "sts-resize.vshn.net/replicas"
 
 // ScaleUpAnnotation marks a replica as in the process of scaling back up and prevents the controller from scaling it down.
-const ScaleUpAnnotation = "sts-resize.appuio.ch/scalup"
+const ScaleUpAnnotation = "sts-resize.vshn.net/scalup"
 
 // PrepareScaleDown changes the replica to 0, if applicable.
 // It saves the original state and returns true if it ran successfully before and the StatefulSet is scaled to 0.

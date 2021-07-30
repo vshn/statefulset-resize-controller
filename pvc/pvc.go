@@ -11,7 +11,7 @@ import (
 )
 
 // ManagedLabel is a label to mark resources to be managed by the controller
-const ManagedLabel = "sts-resize.appuio.ch/managed"
+const ManagedLabel = "sts-resize.vshn.net/managed"
 
 // NewEntity returns a new pvc Info
 func NewEntity(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity) Entity {

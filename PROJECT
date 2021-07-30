@@ -1,4 +1,4 @@
-domain: appuio.ch
+domain: vshn.net
 layout:
 - go.kubebuilder.io/v3
 projectName: statefulset-resize-controller
