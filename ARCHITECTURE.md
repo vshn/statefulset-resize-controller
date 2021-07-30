@@ -41,7 +41,7 @@ All information on the state of the resize is stored as annotations of the state
 
 ### Find Resizable PVCs
 
-TODO DIAGRAM 
+![](./doc/find-pvc.drawio.svg)
 
 The controller is notified of any statefulset change.
 This means as the very first step we detect whether the statefulset needs to be resized.
@@ -56,7 +56,7 @@ Finding PVCs is handled in `controller/pvc.go`.
 
 ### Scale Down
 
-TODO DIAGRAM 
+![](./doc/scale-down.drawio.svg)
 
 Before any volume resizing can happen we scale down the statefulset to avoid data corruption. 
 The original number replicas is stored as an annotation.
@@ -65,7 +65,7 @@ The original number replicas is stored as an annotation.
 This is handled in `controllers/statefulset.go` and `statefulset/`.
 ### Backup
 
-TODO DIAGRAM 
+![](./doc/backup.drawio.svg)
 
 As soon as the statefulset has scaled down, the controller initiates a backup of the to be resized PVCs.
 This means for each PVC it will create a new PVC with the same size as the original and it will start a job that mounts both PVCs and will `rsync` the data to the backup.
@@ -74,7 +74,7 @@ This is handled in `controllers/backup.go` and `controllers/copy.go`
 
 ### Restore
 
-TODO DIAGRAM 
+![](./doc/restore.drawio.svg)
 
 When the backup job completed successfully, the original PVC will be deleted and recreated with the new size.
 A new job will be started to restore the backed up data to the new, larger, PVC.
@@ -83,7 +83,7 @@ This is handled in `controllers/restore.go` and `controllers/copy.go`
 
 ### Scale Up 
 
-TODO DIAGRAM 
+![](./doc/scale-up.drawio.svg)
 
 After a successful restore of all PVCs, the statefulset is scaled back up to its original size and all remaining annotations are cleared.
 
@@ -91,4 +91,12 @@ This is handled in `controllers/statefulset.go` and `statefulset/`.
 
 ## Failure Handling
 
-TODO
+Most errors, like failing to connect to the Kubernetes API, will be treated as a transient error and the controller will retry the operation.
+
+There are a few ways the resizing can potentially fail, that cannot be recovered.
+The most relevant is when a copy job fails to complete.
+In this case a `CriticalError` will be returned.
+On a `CriticalError` the statefulset will be marked as failed and a critical Kubernetes event will be logged.
+Depending on the type of error, the statefulset will scale back up to its original replicas.
+
+Failed statefulsets will not be resized again and depend on human intervention.
