@@ -1,22 +1,16 @@
 == Architecture
 
-This document describes the high-level architecture of the Statefulset
-Resize Controller. It should give you a good impression on _how_ it
-works and _where_ to change things.
+This document describes the high-level architecture of the Statefulset Resize Controller.
+It should give you a good impression on _how_ it works and _where_ to change things.
 
 === Overview
 
-On a very high-level, the Statefulset Resize Controller watches changes
-on Statefulsets and reacts to them. This is the general way Kubernetes
-Operators work and we call this reacting to resource changes the
-_reconcile loop_. If you are not familiar with Kubernetes Operators it
-might be helpful to read up on them before proceeding.
+On a very high-level, the Statefulset Resize Controller watches changes on Statefulsets and reacts to them.
+This is the general way Kubernetes Operators work and we call this reacting to resource changes the _reconcile loop_.
+If you are not familiar with Kubernetes Operators it might be helpful to read up on them before proceeding.
 
-The controller will notice Statefulsets that should be resized, make a
-copy of the current volumes by creating new volumes with the requested
-size, delete the previous volume and then restore the original data from
-the previous volumes to the new volumes. It does this by only
-interacting with the Kubernetes API and has no access to other systems.
+The controller will notice Statefulsets that should be resized, make a copy of the current volumes by creating new volumes with the requested size, delete the previous volume and then restore the original data from the previous volumes to the new volumes.
+It does this by only interacting with the Kubernetes API and has no access to other systems.
 
 ==== Code Map
 
@@ -39,24 +33,21 @@ vshn.net
 
 === Resize Steps
 
-There are five distinct steps that are part of a successful resize. Each
-of these steps is abstracted as an idempotent function that will return
-whether it completed or has completed successfully before.
+There are five distinct steps that are part of a successful resize.
+Each of these steps is abstracted as an idempotent function that will return whether it completed or has completed successfully before.
 
-All information on the state of the resize is stored as annotations of
-the statefulset.
+All information on the state of the resize is stored as annotations of the statefulset.
 
 ==== Find Resizable PVCs
 
 image:./doc/find-pvc.drawio.svg[image]
 
-The controller is notified of any statefulset change. This means as the
-very first step we detect whether the statefulset needs to be resized.
+The controller is notified of any statefulset change.
+This means as the very first step we detect whether the statefulset needs to be resized.
 
-This first includes fetching the StatefulSet, and checking whether we
-are already in the process of resizing. It then finds all PVCs that are
-smaller then the PVC template of the StatefulSet. If there are any, they
-are stored on the StatefulSet and we proceed with the resizing.
+This first includes fetching the StatefulSet, and checking whether we are already in the process of resizing.
+It then finds all PVCs that are smaller then the PVC template of the StatefulSet.
+If there are any, they are stored on the StatefulSet and we proceed with the resizing.
 
 Fetching the statefulset is handled in `controllers/statefulset.go`.
 Finding PVCs is handled in `controller/pvc.go`.
@@ -65,19 +56,17 @@ Finding PVCs is handled in `controller/pvc.go`.
 
 image:./doc/scale-down.drawio.svg[image]
 
-Before any volume resizing can happen we scale down the statefulset to
-avoid data corruption. The original number replicas is stored as an
-annotation.
+Before any volume resizing can happen we scale down the statefulset to avoid data corruption.
+The original number replicas is stored as an annotation.
 
-This is handled in `controllers/statefulset.go` and `statefulset/`. ###
-Backup
+This is handled in `controllers/statefulset.go` and `statefulset/`.
+
+==== Backup
 
 image:./doc/backup.drawio.svg[image]
 
-As soon as the statefulset has scaled down, the controller initiates a
-backup of the to be resized PVCs. This means for each PVC it will create
-a new PVC with the same size as the original and it will start a job
-that mounts both PVCs and will `rsync` the data to the backup.
+As soon as the statefulset has scaled down, the controller initiates a backup of the to be resized PVCs.
+This means for each PVC it will create a new PVC with the same size as the original and it will start a job that mounts both PVCs and will `rsync` the data to the backup.
 
 This is handled in `controllers/backup.go` and `controllers/copy.go`
 
@@ -85,9 +74,8 @@ This is handled in `controllers/backup.go` and `controllers/copy.go`
 
 image:./doc/restore.drawio.svg[image]
 
-When the backup job completed successfully, the original PVC will be
-deleted and recreated with the new size. A new job will be started to
-restore the backed up data to the new, larger, PVC.
+When the backup job completed successfully, the original PVC will be deleted and recreated with the new size.
+A new job will be started to restore the backed up data to the new, larger, PVC.
 
 This is handled in `controllers/restore.go` and `controllers/copy.go`
 
@@ -95,23 +83,18 @@ This is handled in `controllers/restore.go` and `controllers/copy.go`
 
 image:./doc/scale-up.drawio.svg[image]
 
-After a successful restore of all PVCs, the statefulset is scaled back
-up to its original size and all remaining annotations are cleared.
+After a successful restore of all PVCs, the statefulset is scaled back up to its original size and all remaining annotations are cleared.
 
 This is handled in `controllers/statefulset.go` and `statefulset/`.
 
 === Failure Handling
 
-Most errors, like failing to connect to the Kubernetes API, will be
-treated as a transient error and the controller will retry the
-operation.
+Most errors, like failing to connect to the Kubernetes API, will be treated as a transient error and the controller will retry the operation.
 
-There are a few ways the resizing can potentially fail, that cannot be
-recovered. The most relevant is when a copy job fails to complete. In
-this case a `CriticalError` will be returned. On a `CriticalError` the
-statefulset will be marked as failed and a critical Kubernetes event
-will be logged. Depending on the type of error, the statefulset will
-scale back up to its original replicas.
+There are a few ways the resizing can potentially fail, that cannot be recovered.
+The most relevant is when a copy job fails to complete.
+In this case a `CriticalError` will be returned.
+On a `CriticalError` the StatefulSet will be marked as failed and a critical Kubernetes event will be logged.
+Depending on the type of error, the statefulset will scale back up to its original replicas.
 
-Failed statefulsets will not be resized again and depend on human
-intervention.
+Failed StatefulSet will not be resized again and depend on human intervention.
