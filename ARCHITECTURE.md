@@ -9,7 +9,7 @@ On a very high-level, the Statefulset Resize Controller watches changes on State
 This is the general way Kubernetes Operators work and we call this reacting to resource changes the *reconcile loop*.
 If you are not familiar with Kubernetes Operators it might be helpful to read up on them before proceeding.
 
-The controller will notice Statefulsets that should be resized, make a copy of the too small volumes, recreate the original volumes with the requested size, and restore the original data from the backup.
+The controller will notice Statefulsets that should be resized, make a copy of the current volumes by creating new volumes with the requested size, delete the previous volume and then restore the original data from the previous volumes to the new volumes.
 It does this by only interacting with the Kubernetes API and has no access to other systems.
 
 ### Code Map
@@ -47,11 +47,12 @@ The controller is notified of any statefulset change.
 This means as the very first step we detect whether the statefulset needs to be resized.
 
 
-This first includes fetching the statefulset, and checking whether we are already in the process of resizing.
-It then finds all PVCs that are smaller then the PVC template of the statefulset.
-If there are any, they are stored on the statefulset and we proceed with the resizing.
+This first includes fetching the StatefulSet, and checking whether we are already in the process of resizing.
+It then finds all PVCs that are smaller then the PVC template of the StatefulSet.
+If there are any, they are stored on the StatefulSet and we proceed with the resizing.
 
-Fetching the statefulset is handled in `controllers/statefulset.go`. Finding PVCs is handled in `controller/pvc.go`.
+Fetching the statefulset is handled in `controllers/statefulset.go`. 
+Finding PVCs is handled in `controller/pvc.go`.
 
 ### Scale Down
 
