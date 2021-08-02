@@ -1,0 +1,12 @@
+domain: vshn.net
+layout:
+- go.kubebuilder.io/v3
+projectName: statefulset-resize-controller
+repo: github.com/vshn/statefulset-resize-controller
+resources:
+- controller: true
+  group: apps
+  kind: StatefulSet
+  path: k8s.io/api/apps/v1
+  version: v1
+version: "3"
