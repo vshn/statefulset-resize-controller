@@ -8,7 +8,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vshn/statefulset-resize-controller/statefulset"
@@ -43,7 +42,7 @@ func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedN
 	old := &appsv1.StatefulSet{}
 	err := r.Get(ctx, namespacedName, old)
 	if err != nil {
-		return nil, client.IgnoreNotFound(err)
+		return nil, err
 	}
 	sts, err := statefulset.NewEntity(old)
 	if err != nil {

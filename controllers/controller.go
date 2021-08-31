@@ -35,8 +35,7 @@ func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	sts, err := r.fetchStatefulSet(ctx, req.NamespacedName)
 	if err != nil {
-		l.Error(err, "Unable to fetch StatefulSet")
-		return ctrl.Result{}, err
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !sts.Resizing() || sts.Failed() {
 		return ctrl.Result{}, nil
