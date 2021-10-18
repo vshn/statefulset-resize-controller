@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,7 +81,7 @@ func newBackup(namespace, name, size string, fs ...func(*corev1.PersistentVolume
 	return pvc
 }
 
-func newTestJob(namespace string, src, dst client.ObjectKey, image string, state *batchv1.JobConditionType, fs ...func(*batchv1.Job) *batchv1.Job) *batchv1.Job {
+func newTestJob(namespace string, src, dst client.ObjectKey, image string, saname string, state *batchv1.JobConditionType, fs ...func(*batchv1.Job) *batchv1.Job) *batchv1.Job {
 	name := fmt.Sprintf("sync-%s-to-%s", src.Name, dst.Name)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -114,7 +115,8 @@ func newTestJob(namespace string, src, dst client.ObjectKey, image string, state
 							ImagePullPolicy:          "Always",
 						},
 					},
-					RestartPolicy: corev1.RestartPolicyOnFailure,
+					RestartPolicy:      corev1.RestartPolicyOnFailure,
+					ServiceAccountName: saname,
 					Volumes: []corev1.Volume{
 						{
 							Name: "src",
@@ -206,6 +208,42 @@ func newTestStatefulSet(namespace, name string, replicas int32, size string) *ap
 	}
 }
 
+func newTestSA(namespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      RbacObjName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				ManagedLabel: "true",
+			},
+		},
+	}
+}
+
+func newTestRB(namespace, crname string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      RbacObjName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				ManagedLabel: "true",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     crname,
+		},
+		Subjects: []rbacv1.Subject{
+			rbacv1.Subject{
+				Kind:      rbacv1.ServiceAccountKind,
+				Name:      RbacObjName,
+				Namespace: namespace,
+			},
+		},
+	}
+}
+
 var jobSucceeded = batchv1.JobComplete
 var jobFailed = batchv1.JobFailed
 
@@ -244,6 +282,40 @@ func stsExists(ctx context.Context, c client.Client, other *appsv1.StatefulSet) 
 		return false
 	}
 	return assert.ObjectsAreEqual(sts.Spec, other.Spec) && assert.ObjectsAreEqual(sts.Labels, other.Labels)
+}
+
+func saExists(ctx context.Context, c client.Client, other *corev1.ServiceAccount) bool {
+	sa := &corev1.ServiceAccount{}
+	key := client.ObjectKeyFromObject(other)
+	if err := c.Get(ctx, key, sa); err != nil {
+		return false
+	}
+	return sa.Name == other.Name && sa.Namespace == other.Namespace &&
+		assert.ObjectsAreEqual(sa.Labels, other.Labels)
+}
+
+func saNotExists(ctx context.Context, c client.Client, other *corev1.ServiceAccount) bool {
+	sa := &corev1.ServiceAccount{}
+	key := client.ObjectKeyFromObject(other)
+	err := c.Get(ctx, key, sa)
+	return apierrors.IsNotFound(err) || (err == nil && sa.DeletionTimestamp != nil)
+}
+
+func rbExists(ctx context.Context, c client.Client, other *rbacv1.RoleBinding) bool {
+	rb := &rbacv1.RoleBinding{}
+	key := client.ObjectKeyFromObject(other)
+	if err := c.Get(ctx, key, rb); err != nil {
+		return false
+	}
+	return rb.Name == other.Name && rb.Namespace == other.Namespace &&
+		assert.ObjectsAreEqual(rb.Labels, other.Labels)
+}
+
+func rbNotExists(ctx context.Context, c client.Client, other *rbacv1.RoleBinding) bool {
+	rb := &rbacv1.RoleBinding{}
+	key := client.ObjectKeyFromObject(other)
+	err := c.Get(ctx, key, rb)
+	return apierrors.IsNotFound(err) || (err == nil && rb.DeletionTimestamp != nil)
 }
 
 // Only succeeds if the condition is valid for `waitFor` time.

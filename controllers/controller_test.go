@@ -17,6 +17,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -27,7 +28,7 @@ import (
 func TestController(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	c, stop := startTestReconciler(t, ctx)
+	c, stop := startTestReconciler(t, ctx, "")
 	defer stop()
 
 	t.Run("e2e", func(t *testing.T) { // This allows the subtest to run in parallel
@@ -102,10 +103,10 @@ func TestController(t *testing.T) {
 				eventuallyScaledDown(t, ctx, c, sts)
 			})
 			t.Run("Back up", func(t *testing.T) {
-				eventuallyBackedUp(t, ctx, c, pvc, true)
+				eventuallyBackedUp(t, ctx, c, pvc, true, "")
 			})
 			t.Run("Restored", func(t *testing.T) {
-				eventuallyRestored(t, ctx, c, pvc, "2G")
+				eventuallyRestored(t, ctx, c, pvc, "2G", "")
 			})
 			t.Run("Scale up", func(t *testing.T) {
 				eventuallyScaledUp(t, ctx, c, sts, 1)
@@ -134,7 +135,7 @@ func TestController(t *testing.T) {
 				eventuallyScaledDown(t, ctx, c, sts)
 			})
 			t.Run("Back up failed", func(t *testing.T) {
-				eventuallyBackedUp(t, ctx, c, pvc, false)
+				eventuallyBackedUp(t, ctx, c, pvc, false, "")
 			})
 			t.Run("Scale up", func(t *testing.T) {
 				eventuallyScaledUp(t, ctx, c, sts, 1)
@@ -142,6 +143,55 @@ func TestController(t *testing.T) {
 			t.Run("Mark as failed", func(t *testing.T) {
 				require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(sts), sts))
 				require.Equal(t, sts.Labels[statefulset.FailedLabel], "true")
+			})
+		})
+	})
+}
+
+func TestControllerWithClusterRole(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	crname := "myclusterrole"
+	c, stop := startTestReconciler(t, ctx, crname)
+	defer stop()
+
+	t.Run("e2e", func(t *testing.T) { // This allows the subtest to run in parallel
+		t.Run("Resize StatfulSet", func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			ns := "e2e3"
+			require := require.New(t)
+			require.NoError(c.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: ns,
+				},
+			}))
+			sts := newTestStatefulSet(ns, "test", 1, "2G")
+			pvc := newSource(ns, "data-test-0", "1G",
+				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
+					pvc.Labels = sts.Spec.Selector.MatchLabels
+					return pvc
+				})
+			require.NoError(c.Create(ctx, pvc))
+			require.NoError(c.Create(ctx, sts))
+
+			t.Run("Scale down", func(t *testing.T) {
+				eventuallyScaledDown(t, ctx, c, sts)
+			})
+			t.Run("RBAC created", func(t *testing.T) {
+				eventuallyRbacCreated(t, ctx, c, ns, crname)
+			})
+			t.Run("Back up", func(t *testing.T) {
+				eventuallyBackedUp(t, ctx, c, pvc, true, "")
+			})
+			t.Run("Restored", func(t *testing.T) {
+				eventuallyRestored(t, ctx, c, pvc, "2G", "")
+			})
+			t.Run("RBAC removed", func(t *testing.T) {
+				eventuallyRbacRemoved(t, ctx, c, ns, crname)
+			})
+			t.Run("Scale up", func(t *testing.T) {
+				eventuallyScaledUp(t, ctx, c, sts, 1)
 			})
 		})
 	})
@@ -179,7 +229,7 @@ func eventuallyScaledUp(t *testing.T, ctx context.Context, c client.Client, sts 
 	require.NoError(t, c.Status().Update(ctx, sts)) // manualy do what k8s would do
 	return ok
 }
-func eventuallyBackedUp(t *testing.T, ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, successful bool) bool {
+func eventuallyBackedUp(t *testing.T, ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, successful bool, saname string) bool {
 	// Check if backup is created
 	bname := strings.ToLower(fmt.Sprintf("%s-backup-1g", pvc.Name))
 	bu := newBackup(pvc.Namespace, bname, "1G")
@@ -194,7 +244,7 @@ func eventuallyBackedUp(t *testing.T, ctx context.Context, c client.Client, pvc 
 	job := newTestJob(pvc.Namespace,
 		client.ObjectKey{Namespace: pvc.Namespace, Name: pvc.Name},
 		client.ObjectKey{Namespace: bu.Namespace, Name: bu.Name},
-		"test", &jobState)
+		"test", saname, &jobState)
 	jobStatus := job.Status
 	ok := assert.Eventually(t, func() bool {
 		return jobExists(ctx, c, job)
@@ -205,7 +255,7 @@ func eventuallyBackedUp(t *testing.T, ctx context.Context, c client.Client, pvc 
 	return ok
 }
 
-func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, size string) bool {
+func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, size string, saname string) bool {
 	require.Eventually(t, func() bool {
 		return pvcNotExists(ctx, c, pvc)
 	}, duration, interval, "pvc removed")
@@ -227,7 +277,7 @@ func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc 
 	job := newTestJob(pvc.Namespace,
 		client.ObjectKey{Namespace: pvc.Namespace, Name: bname},
 		client.ObjectKey{Namespace: pvc.Namespace, Name: pvc.Name},
-		"test", &jobSucceeded)
+		"test", saname, &jobSucceeded)
 	jobStatus := job.Status
 	ok := assert.Eventually(t, func() bool {
 		return jobExists(ctx, c, job)
@@ -238,8 +288,34 @@ func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc 
 	return ok
 }
 
+func eventuallyRbacCreated(t *testing.T, ctx context.Context, c client.Client, namespace, crname string) bool {
+	sa := newTestSA(namespace)
+	require.Eventually(t, func() bool {
+		return saExists(ctx, c, sa)
+	}, duration, interval, "sa created")
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(sa), sa))
+	rb := newTestRB(namespace, crname)
+	require.Eventually(t, func() bool {
+		return rbExists(ctx, c, rb)
+	}, duration, interval, "rb created")
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(rb), rb))
+	return true
+}
+
+func eventuallyRbacRemoved(t *testing.T, ctx context.Context, c client.Client, namespace, crname string) bool {
+	sa := newTestSA(namespace)
+	require.Eventually(t, func() bool {
+		return saNotExists(ctx, c, sa)
+	}, duration, interval, "sa created")
+	rb := newTestRB(namespace, crname)
+	require.Eventually(t, func() bool {
+		return rbNotExists(ctx, c, rb)
+	}, duration, interval, "rb created")
+	return true
+}
+
 // startTestReconciler sets up a separate test env and starts the controller
-func startTestReconciler(t *testing.T, ctx context.Context) (client.Client, func() error) {
+func startTestReconciler(t *testing.T, ctx context.Context, crname string) (client.Client, func() error) {
 	req := require.New(t)
 
 	testEnv := &envtest.Environment{}
@@ -250,6 +326,7 @@ func startTestReconciler(t *testing.T, ctx context.Context) (client.Client, func
 	req.NoError(appsv1.AddToScheme(s))
 	req.NoError(corev1.AddToScheme(s))
 	req.NoError(batchv1.AddToScheme(s))
+	req.NoError(rbacv1.AddToScheme(s))
 
 	mgr, err := ctrl.NewManager(conf, ctrl.Options{
 		Scheme: s,
@@ -260,6 +337,7 @@ func startTestReconciler(t *testing.T, ctx context.Context) (client.Client, func
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("statefulset-resize-controller"),
 		SyncContainerImage: "test",
+		SyncClusterRole:    crname,
 		RequeueAfter:       time.Second,
 	}).SetupWithManager(mgr))
 	go func() {
