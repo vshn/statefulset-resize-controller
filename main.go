@@ -39,7 +39,10 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var syncContainerImage string
+	var syncClusterRole string
 	flag.StringVar(&syncContainerImage, "sync-image", "instrumentisto/rsync-ssh", "A container image containing rsync, used to move data.")
+	flag.StringVar(&syncClusterRole, "sync-cluster-role", "", "ClusterRole to use for the sync jobs."+
+		"For example, this can be used to allow the sync job to run as root on a cluster with PSPs enabled by providing the name of a ClusterRole which allows usage of a privileged PSP.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -71,6 +74,7 @@ func main() {
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("statefulset-resize-controller"),
 		SyncContainerImage: syncContainerImage,
+		SyncClusterRole:    syncClusterRole,
 		RequeueAfter:       10 * time.Second,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StatefulSet")
