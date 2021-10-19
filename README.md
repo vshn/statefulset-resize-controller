@@ -19,6 +19,22 @@ This means increasing the storage size of a Statefulset involves quite a lot of 
 The Statefulset Resize Controller is general solution to this problem and does not require any additional support from the storage backend.
 When recreating a Statefulset using `--cascade=orphan`, the controller will notice the change, scale down the Statefulset, recreate the PVCs, and migrate the data.
 
+### Controller command line arguments
+
+* `--sync-image`: A container image containing rsync, used to move data.
+Default `instrumentisto/rsync-ssh`.
+* `--sync-cluster-role`: A ClusterRole to use for the sync jobs.
+If this is not specified, the sync jobs run with the default service account in the StatefulSet's namespace.
+For example, this can be used to allow the sync job to run as root on a cluster with PSPs enabled by providing the name of a ClusterRole which allows usage of a privileged PSP.
+Default `""`.
+* `--metrics-bind-address`: The address the metric endpoint binds to.
+Default `:8080`.
+* `--health-probe-bind-address`: The address the probe endpoint binds to.
+Default `:8081`.
+* `--leader-elect`: Enable leader election for controller manager.
+Enabling this will ensure there is only one active controller manager.
+Default `false`.
+
 ### Example
 
 Get access to a Kubernetes cluster that has support for automatic PV provisioning.
