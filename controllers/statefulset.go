@@ -57,7 +57,11 @@ func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedN
 }
 
 func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *statefulset.Entity) (bool, error) {
-	var err error
+	stsv1, err := sts.StatefulSet()
+	if err != nil {
+		return false, err
+	}
+	l := log.FromContext(ctx).WithValues("statefulset", fmt.Sprintf("%s/%s", stsv1.Namespace, stsv1.Name))
 
 	done := sts.PrepareScaleDown()
 	if !done {
@@ -76,7 +80,7 @@ func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *state
 
 	err = r.deleteRbacObjs(ctx, objs)
 	if err != nil {
-		return false, err
+		l.Info("Failed to delete Job RBAC objects", "error", err)
 	}
 
 	done, err = sts.PrepareScaleUp()
