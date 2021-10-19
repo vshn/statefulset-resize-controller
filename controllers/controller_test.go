@@ -187,10 +187,10 @@ func TestControllerWithClusterRole(t *testing.T) {
 				eventuallyRbacCreated(t, ctx, c, ns, crname)
 			})
 			t.Run("Back up", func(t *testing.T) {
-				eventuallyBackedUp(t, ctx, c, pvc, true, "")
+				eventuallyBackedUp(t, ctx, c, pvc, true, RbacObjName)
 			})
 			t.Run("Restored", func(t *testing.T) {
-				eventuallyRestored(t, ctx, c, pvc, "2G", "")
+				eventuallyRestored(t, ctx, c, pvc, "2G", RbacObjName)
 			})
 			t.Run("RBAC removed", func(t *testing.T) {
 				eventuallyRbacRemoved(t, ctx, c, ns, crname)

@@ -272,7 +272,8 @@ func jobExists(ctx context.Context, c client.Client, other *batchv1.Job) bool {
 	}
 	return assert.ObjectsAreEqual(job.Spec.Template.Spec.Containers, other.Spec.Template.Spec.Containers) &&
 		assert.ObjectsAreEqual(job.Spec.Template.Spec.Volumes, other.Spec.Template.Spec.Volumes) &&
-		assert.ObjectsAreEqual(job.Labels, other.Labels)
+		assert.ObjectsAreEqual(job.Labels, other.Labels) &&
+		job.Spec.Template.Spec.ServiceAccountName == other.Spec.Template.Spec.ServiceAccountName
 }
 
 func stsExists(ctx context.Context, c client.Client, other *appsv1.StatefulSet) bool {
