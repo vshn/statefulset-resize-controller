@@ -102,6 +102,11 @@ func TestController(t *testing.T) {
 			t.Run("Scale down", func(t *testing.T) {
 				eventuallyScaledDown(t, ctx, c, sts)
 			})
+
+			consistently(t, func() bool {
+				return rbacNotExists(t, ctx, c, ns, "someclusterrole")
+			}, duration, interval, "RBAC doesn't exist")
+
 			t.Run("Back up", func(t *testing.T) {
 				eventuallyBackedUp(t, ctx, c, pvc, true, "")
 			})
@@ -312,6 +317,12 @@ func eventuallyRbacRemoved(t *testing.T, ctx context.Context, c client.Client, n
 		return rbNotExists(ctx, c, rb)
 	}, duration, interval, "rb created")
 	return true
+}
+
+func rbacNotExists(t *testing.T, ctx context.Context, c client.Client, namespace, crname string) bool {
+	sa := newTestSA(namespace)
+	rb := newTestRB(namespace, crname)
+	return saNotExists(ctx, c, sa) && rbNotExists(ctx, c, rb)
 }
 
 // startTestReconciler sets up a separate test env and starts the controller
