@@ -64,9 +64,19 @@ func (r StatefulSetReconciler) resizeStatefulSet(ctx context.Context, sts *state
 		return done, r.updateStatefulSet(ctx, sts, nil)
 	}
 
-	sts.Pvcs, err = r.resizePVCs(ctx, sts.Pvcs)
+	objs, err := r.createRbacObjs(ctx, sts)
+	if err != nil {
+		return false, err
+	}
+
+	sts.Pvcs, err = r.resizePVCs(context.WithValue(ctx, RbacObjCtxKey, objs), sts.Pvcs)
 	if err != nil || len(sts.Pvcs) > 0 {
 		return len(sts.Pvcs) == 0, r.updateStatefulSet(ctx, sts, err)
+	}
+
+	err = r.deleteRbacObjs(ctx, objs)
+	if err != nil {
+		return false, err
 	}
 
 	done, err = sts.PrepareScaleUp()

@@ -104,7 +104,7 @@ func TestController(t *testing.T) {
 			})
 
 			consistently(t, func() bool {
-				return rbacNotExists(t, ctx, c, ns, "someclusterrole")
+				return rbacNotExists(t, ctx, c, ns, "somesa", "someclusterrole")
 			}, duration, interval, "RBAC doesn't exist")
 
 			t.Run("Back up", func(t *testing.T) {
@@ -164,7 +164,7 @@ func TestControllerWithClusterRole(t *testing.T) {
 		t.Run("Resize StatfulSet", func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			ns := "e2e3"
+			ns := "e2e"
 			require := require.New(t)
 			require.NoError(c.Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
@@ -180,20 +180,22 @@ func TestControllerWithClusterRole(t *testing.T) {
 			require.NoError(c.Create(ctx, pvc))
 			require.NoError(c.Create(ctx, sts))
 
+			rbacobjname := RbacObjNamePrefix + "test"
+
 			t.Run("Scale down", func(t *testing.T) {
 				eventuallyScaledDown(t, ctx, c, sts)
 			})
 			t.Run("RBAC created", func(t *testing.T) {
-				eventuallyRbacCreated(t, ctx, c, ns, crname)
+				eventuallyRbacCreated(t, ctx, c, ns, rbacobjname, crname)
 			})
 			t.Run("Back up", func(t *testing.T) {
-				eventuallyBackedUp(t, ctx, c, pvc, true, RbacObjName)
+				eventuallyBackedUp(t, ctx, c, pvc, true, rbacobjname)
 			})
 			t.Run("Restored", func(t *testing.T) {
-				eventuallyRestored(t, ctx, c, pvc, "2G", RbacObjName)
+				eventuallyRestored(t, ctx, c, pvc, "2G", rbacobjname)
 			})
 			t.Run("RBAC removed", func(t *testing.T) {
-				eventuallyRbacRemoved(t, ctx, c, ns, crname)
+				eventuallyRbacRemoved(t, ctx, c, ns, rbacobjname, crname)
 			})
 			t.Run("Scale up", func(t *testing.T) {
 				eventuallyScaledUp(t, ctx, c, sts, 1)
@@ -293,13 +295,13 @@ func eventuallyRestored(t *testing.T, ctx context.Context, c client.Client, pvc 
 	return ok
 }
 
-func eventuallyRbacCreated(t *testing.T, ctx context.Context, c client.Client, namespace, crname string) bool {
-	sa := newTestSA(namespace)
+func eventuallyRbacCreated(t *testing.T, ctx context.Context, c client.Client, namespace, objname, crname string) bool {
+	sa := newTestSA(namespace, objname)
 	require.Eventually(t, func() bool {
 		return saExists(ctx, c, sa)
 	}, duration, interval, "sa created")
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(sa), sa))
-	rb := newTestRB(namespace, crname)
+	rb := newTestRB(namespace, objname, crname)
 	require.Eventually(t, func() bool {
 		return rbExists(ctx, c, rb)
 	}, duration, interval, "rb created")
@@ -307,21 +309,21 @@ func eventuallyRbacCreated(t *testing.T, ctx context.Context, c client.Client, n
 	return true
 }
 
-func eventuallyRbacRemoved(t *testing.T, ctx context.Context, c client.Client, namespace, crname string) bool {
-	sa := newTestSA(namespace)
+func eventuallyRbacRemoved(t *testing.T, ctx context.Context, c client.Client, namespace, objname, crname string) bool {
+	sa := newTestSA(namespace, objname)
 	require.Eventually(t, func() bool {
 		return saNotExists(ctx, c, sa)
 	}, duration, interval, "sa created")
-	rb := newTestRB(namespace, crname)
+	rb := newTestRB(namespace, objname, crname)
 	require.Eventually(t, func() bool {
 		return rbNotExists(ctx, c, rb)
 	}, duration, interval, "rb created")
 	return true
 }
 
-func rbacNotExists(t *testing.T, ctx context.Context, c client.Client, namespace, crname string) bool {
-	sa := newTestSA(namespace)
-	rb := newTestRB(namespace, crname)
+func rbacNotExists(t *testing.T, ctx context.Context, c client.Client, namespace, objname, crname string) bool {
+	sa := newTestSA(namespace, objname)
+	rb := newTestRB(namespace, crname, objname)
 	return saNotExists(ctx, c, sa) && rbNotExists(ctx, c, rb)
 }
 

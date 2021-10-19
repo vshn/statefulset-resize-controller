@@ -208,10 +208,10 @@ func newTestStatefulSet(namespace, name string, replicas int32, size string) *ap
 	}
 }
 
-func newTestSA(namespace string) *corev1.ServiceAccount {
+func newTestSA(namespace, objname string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      RbacObjName,
+			Name:      objname,
 			Namespace: namespace,
 			Labels: map[string]string{
 				ManagedLabel: "true",
@@ -220,10 +220,10 @@ func newTestSA(namespace string) *corev1.ServiceAccount {
 	}
 }
 
-func newTestRB(namespace, crname string) *rbacv1.RoleBinding {
+func newTestRB(namespace, objname, crname string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      RbacObjName,
+			Name:      objname,
 			Namespace: namespace,
 			Labels: map[string]string{
 				ManagedLabel: "true",
@@ -237,7 +237,7 @@ func newTestRB(namespace, crname string) *rbacv1.RoleBinding {
 		Subjects: []rbacv1.Subject{
 			rbacv1.Subject{
 				Kind:      rbacv1.ServiceAccountKind,
-				Name:      RbacObjName,
+				Name:      objname,
 				Namespace: namespace,
 			},
 		},
