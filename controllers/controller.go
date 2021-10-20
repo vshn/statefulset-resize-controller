@@ -19,6 +19,7 @@ type StatefulSetReconciler struct {
 	Recorder record.EventRecorder
 
 	SyncContainerImage string
+	SyncClusterRole    string
 	RequeueAfter       time.Duration
 }
 
@@ -28,6 +29,8 @@ type StatefulSetReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebinding,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccount,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is the main work loop, reacting to changes in statefulsets and initiating resizing of StatefulSets.
 func (r *StatefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -7,6 +7,18 @@ metadata:
   name: controller-manager
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - serviceaccount
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - apps
   resources:
   - statefulsets
@@ -56,6 +68,18 @@ rules:
   - ""
   resources:
   - persistentvolumeclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebinding
   verbs:
   - create
   - delete

@@ -22,7 +22,23 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 		return false, errors.New("unable to copy across namespaces")
 	}
 
-	job := newJob(src.Namespace, r.SyncContainerImage, src.Name, dst.Name)
+	var rbacObjs RbacObjects
+	if v := ctx.Value(RbacObjCtxKey); v != nil {
+		objs, ok := v.(RbacObjects)
+		if !ok {
+			return false, errors.New("Unexpected type for job RBAC config in context")
+		}
+		rbacObjs = objs
+	} else {
+		return false, errors.New("unable to extract job RBAC config from context")
+	}
+
+	saname := ""
+	if rbacObjs.Created && r.SyncClusterRole != "" {
+		saname = rbacObjs.ServiceAccount.Name
+	}
+
+	job := newJob(src.Namespace, r.SyncContainerImage, saname, src.Name, dst.Name)
 	job, err := r.getOrCreateJob(ctx, job)
 	if err != nil {
 		return false, err
@@ -39,6 +55,9 @@ func (r *StatefulSetReconciler) copyPVC(ctx context.Context, src client.ObjectKe
 		err = r.Client.Delete(ctx, &job, &client.DeleteOptions{
 			PropagationPolicy: &pol,
 		})
+		if err != nil {
+			return false, err
+		}
 	}
 	return done, nil
 }
@@ -63,7 +82,7 @@ func newJobName(src, dst string) string {
 	return strings.ToLower(fmt.Sprintf("sync-%s-to-%s", src, dst))
 }
 
-func newJob(namespace, image, src, dst string) batchv1.Job {
+func newJob(namespace, image, saname, src, dst string) batchv1.Job {
 	return batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      newJobName(src, dst),
@@ -92,7 +111,8 @@ func newJob(namespace, image, src, dst string) batchv1.Job {
 							},
 						},
 					},
-					RestartPolicy: corev1.RestartPolicyOnFailure,
+					RestartPolicy:      corev1.RestartPolicyOnFailure,
+					ServiceAccountName: saname,
 					Volumes: []corev1.Volume{
 						{
 							Name: "src",
