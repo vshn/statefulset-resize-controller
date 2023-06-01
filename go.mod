@@ -3,7 +3,7 @@ module github.com/vshn/statefulset-resize-controller
 go 1.16
 
 require (
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.8.4
 	k8s.io/api v0.21.3
 	k8s.io/apimachinery v0.21.3
 	k8s.io/client-go v0.21.3
