@@ -40,7 +40,7 @@ func filterResizablePVCs(ctx context.Context, sts appsv1.StatefulSet, pvcs []cor
 		}
 		for _, tpl := range sts.Spec.VolumeClaimTemplates {
 			if isPVCTooSmall(ctx, p, tpl, sts.Name) {
-				res = append(res, pvc.NewEntity(p, tpl.Spec.Resources.Requests[corev1.ResourceStorage]))
+				res = append(res, pvc.NewEntity(p, tpl.Spec.Resources.Requests[corev1.ResourceStorage], tpl.Spec.StorageClassName))
 				break
 			}
 		}

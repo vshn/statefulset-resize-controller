@@ -1,4 +1,5 @@
-//+build integration
+//go:build integration
+// +build integration
 
 package controllers
 
@@ -20,6 +21,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -94,6 +96,7 @@ func TestController(t *testing.T) {
 			pvc := newSource(ns, "data-test-0", "1G",
 				func(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 					pvc.Labels = sts.Spec.Selector.MatchLabels
+					pvc.Spec.StorageClassName = pointer.String("default-foobar") // Default storage class. Make sure it is not copied
 					return pvc
 				})
 			require.NoError(c.Create(ctx, pvc))
