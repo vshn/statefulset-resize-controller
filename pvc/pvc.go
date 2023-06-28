@@ -14,13 +14,15 @@ import (
 const ManagedLabel = "sts-resize.vshn.net/managed"
 
 // NewEntity returns a new pvc Info
-func NewEntity(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity) Entity {
+func NewEntity(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity, storageClassName *string) Entity {
+	pvc.Spec.StorageClassName = storageClassName
 	return Entity{
-		SourceName: pvc.Name,
-		Namespace:  pvc.Namespace,
-		Labels:     pvc.Labels,
-		TargetSize: growTo,
-		Spec:       pvc.Spec,
+		SourceName:         pvc.Name,
+		Namespace:          pvc.Namespace,
+		Labels:             pvc.Labels,
+		TargetSize:         growTo,
+		TargetStorageClass: storageClassName,
+		Spec:               pvc.Spec,
 	}
 }
 
@@ -29,9 +31,10 @@ type Entity struct {
 	Namespace  string
 	SourceName string
 
-	Labels     map[string]string
-	Spec       corev1.PersistentVolumeClaimSpec
-	TargetSize resource.Quantity
+	Labels             map[string]string
+	Spec               corev1.PersistentVolumeClaimSpec
+	TargetSize         resource.Quantity
+	TargetStorageClass *string
 
 	BackedUp bool
 	Restored bool
@@ -60,7 +63,7 @@ func (pi Entity) GetBackup() *corev1.PersistentVolumeClaim {
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes:      pi.Spec.AccessModes,
 			Resources:        pi.Spec.Resources,
-			StorageClassName: pi.Spec.StorageClassName,
+			StorageClassName: pi.TargetStorageClass, // use target storage class. Old one might not be usable anymore
 			VolumeMode:       pi.Spec.VolumeMode,
 		},
 	}
@@ -81,7 +84,7 @@ func (pi Entity) GetResizedSource() *corev1.PersistentVolumeClaim {
 					corev1.ResourceStorage: pi.TargetSize,
 				},
 			},
-			StorageClassName: pi.Spec.StorageClassName,
+			StorageClassName: pi.TargetStorageClass,
 			VolumeMode:       pi.Spec.VolumeMode,
 		},
 	}
