@@ -1,5 +1,7 @@
 cover.out
 .github/release-notes.md
+.vscode
+__debug_bin*
 
 # Binaries for programs and plugins
 *.exe
