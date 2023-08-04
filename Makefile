@@ -9,7 +9,7 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 all: fmt vet build
 
 .PHONY: build
-build: 
+build:
 	CGO_ENABLED=0 go build
 
 
@@ -17,11 +17,11 @@ run: fmt vet ## Run against the configured Kubernetes cluster in ~/.kube/config
 	go run ./main.go
 
 .PHONY: test
-test: fmt  ## Run tests 
+test: fmt  ## Run tests
 	go test -tags="" ./... -coverprofile cover.out
 
 .PHONY: integration-test
-integration-test: export ENVTEST_K8S_VERSION = 1.19.x
+integration-test: export ENVTEST_K8S_VERSION = 1.24.x
 integration-test: ## Run integration tests with envtest
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	$(setup-envtest) use '$(ENVTEST_K8S_VERSION)!'

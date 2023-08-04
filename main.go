@@ -22,7 +22,7 @@ import (
 )
 
 //go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
-//go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen crd:trivialVersions=true rbac:roleName=controller-manager paths="./..."
+//go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen rbac:roleName=controller-manager paths="./..."
 
 var (
 	scheme   = runtime.NewScheme()

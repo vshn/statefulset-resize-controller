@@ -68,7 +68,15 @@ func (r *InplaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	return ctrl.Result{}, resizePVCsInplace(ctx, r.Client, stsEntity.Pvcs)
+	err = resizePVCsInplace(ctx, r.Client, stsEntity.Pvcs)
+	if err != nil {
+		r.Recorder.Event(sts, "Warning", "ResizeFailed", "There was an error during the PVC resize")
+		return ctrl.Result{}, err
+	}
+
+	r.Recorder.Event(sts, "Normal", "ResizeSuccessful", "All PVCs have been resized successfully")
+
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
