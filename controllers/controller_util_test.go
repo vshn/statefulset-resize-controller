@@ -320,6 +320,16 @@ func rbNotExists(ctx context.Context, c client.Client, other *rbacv1.RoleBinding
 	return apierrors.IsNotFound(err) || (err == nil && rb.DeletionTimestamp != nil)
 }
 
+func pvcEqualSize(ctx context.Context, c client.Client, other *corev1.PersistentVolumeClaim, newSize string) bool {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := client.ObjectKeyFromObject(other)
+	err := c.Get(ctx, key, pvc)
+	if err != nil {
+		return false
+	}
+	return newSize == pvc.Spec.Resources.Requests.Storage().String()
+}
+
 // Only succeeds if the condition is valid for `waitFor` time.
 // Checks the condition every `tick`
 func consistently(t assert.TestingT, condition func() bool, waitFor time.Duration, tick time.Duration, msgAndArgs ...interface{}) bool {
