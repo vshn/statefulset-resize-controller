@@ -50,7 +50,7 @@ func (r StatefulSetReconciler) fetchStatefulSet(ctx context.Context, namespacedN
 	}
 
 	if !sts.Resizing() {
-		sts.Pvcs, err = r.fetchResizablePVCs(ctx, *sts)
+		sts.Pvcs, err = fetchResizablePVCs(ctx, r.Client, *sts)
 		return sts, err
 	}
 	return sts, nil

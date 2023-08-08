@@ -16,14 +16,14 @@ import (
 )
 
 // getResizablePVCs fetches the information of all PVCs that are smaller than the request of the statefulset
-func (r StatefulSetReconciler) fetchResizablePVCs(ctx context.Context, si statefulset.Entity) ([]pvc.Entity, error) {
+func fetchResizablePVCs(ctx context.Context, cl client.Client, si statefulset.Entity) ([]pvc.Entity, error) {
 	// NOTE(glrf) This will get _all_ PVCs that belonged to the sts. Even the ones not used anymore (i.e. if scaled up and down).
 	sts, err := si.StatefulSet()
 	if err != nil {
 		return nil, err
 	}
 	pvcs := corev1.PersistentVolumeClaimList{}
-	if err := r.List(ctx, &pvcs, client.InNamespace(sts.Namespace), client.MatchingLabels(sts.Spec.Selector.MatchLabels)); err != nil {
+	if err := cl.List(ctx, &pvcs, client.InNamespace(sts.Namespace), client.MatchingLabels(sts.Spec.Selector.MatchLabels)); err != nil {
 		return nil, err
 	}
 	pis := filterResizablePVCs(ctx, *sts, pvcs.Items)
@@ -108,4 +108,23 @@ func (r *StatefulSetReconciler) resizePVCs(ctx context.Context, oldPIs []pvc.Ent
 		}
 	}
 	return pis, nil
+}
+
+func resizePVCsInplace(ctx context.Context, cl client.Client, PVCs []pvc.Entity) error {
+	l := log.FromContext(ctx)
+
+	for _, pvc := range PVCs {
+		l.Info("Updating PVC", "PVCName", pvc.SourceName)
+
+		resizedPVC := pvc.GetResizedSource()
+		resizedPVC.Spec.StorageClassName = pvc.SourceStorageClass
+		resizedPVC.Spec.VolumeName = pvc.Spec.VolumeName
+
+		err := cl.Update(ctx, resizedPVC)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

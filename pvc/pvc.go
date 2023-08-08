@@ -15,6 +15,7 @@ const ManagedLabel = "sts-resize.vshn.net/managed"
 
 // NewEntity returns a new pvc Info
 func NewEntity(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity, storageClassName *string) Entity {
+	sourceStorageClassName := pvc.Spec.StorageClassName
 	pvc.Spec.StorageClassName = storageClassName
 	return Entity{
 		SourceName:         pvc.Name,
@@ -22,6 +23,7 @@ func NewEntity(pvc corev1.PersistentVolumeClaim, growTo resource.Quantity, stora
 		Labels:             pvc.Labels,
 		TargetSize:         growTo,
 		TargetStorageClass: storageClassName,
+		SourceStorageClass: sourceStorageClassName,
 		Spec:               pvc.Spec,
 	}
 }
@@ -35,6 +37,7 @@ type Entity struct {
 	Spec               corev1.PersistentVolumeClaimSpec
 	TargetSize         resource.Quantity
 	TargetStorageClass *string
+	SourceStorageClass *string
 
 	BackedUp bool
 	Restored bool

@@ -7,6 +7,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"go.uber.org/zap/zapcore"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,7 +22,7 @@ import (
 )
 
 //go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
-//go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen crd:trivialVersions=true rbac:roleName=controller-manager paths="./..."
+//go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen rbac:roleName=controller-manager paths="./..."
 
 var (
 	scheme   = runtime.NewScheme()
@@ -40,6 +41,9 @@ func main() {
 	var probeAddr string
 	var syncContainerImage string
 	var syncClusterRole string
+	var inplaceResize bool
+	var inplaceLabelName string
+	var logLevel int
 	flag.StringVar(&syncContainerImage, "sync-image", "instrumentisto/rsync-ssh", "A container image containing rsync, used to move data.")
 	flag.StringVar(&syncClusterRole, "sync-cluster-role", "", "ClusterRole to use for the sync jobs."+
 		"For example, this can be used to allow the sync job to run as root on a cluster with PSPs enabled by providing the name of a ClusterRole which allows usage of a privileged PSP.")
@@ -48,11 +52,16 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&inplaceResize, "inplace", false, "Enable in-place update of PVCs. "+
+		"If the underlying storage supports direct resizing of the PVCs this should be used.")
+	flag.StringVar(&inplaceLabelName, "inplaceLabelName", "sts-resize.vshn.net/resize-inplace", "If inplace resize is enable the sts needs to have this label with value \"true\" in order to be handled.")
+	flag.IntVar(&logLevel, "log-level", 0, "Set the log level.")
+	flag.Parse()
+
 	opts := zap.Options{
 		Development: true,
+		Level:       zapcore.Level(logLevel * -1),
 	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -69,14 +78,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.StatefulSetReconciler{
+	var stsController controllers.StatefulSetController = &controllers.StatefulSetReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("statefulset-resize-controller"),
 		SyncContainerImage: syncContainerImage,
 		SyncClusterRole:    syncClusterRole,
 		RequeueAfter:       10 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	if inplaceResize {
+		stsController = &controllers.InplaceReconciler{
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Recorder:     mgr.GetEventRecorderFor("statefulset-resize-controller"),
+			RequeueAfter: 10 * time.Second,
+			LabelName:    inplaceLabelName,
+		}
+	}
+
+	if err = stsController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StatefulSet")
 		os.Exit(1)
 	}
