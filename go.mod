@@ -89,4 +89,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace github.com/googleapis/gnostic-models => github.com/googleapis/gnostic v0.5.5
+replace github.com/googleapis/gnostic-models => github.com/googleapis/gnostic v0.7.0
