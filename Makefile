@@ -6,6 +6,10 @@ setup-envtest ?= go run sigs.k8s.io/controller-runtime/tools/setup-envtest
 # Run tests (see https://sdk.operatorframework.io/docs/building-operators/golang/references/envtest-setup)
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 
+-include ci.mk
+
+BIN_FILENAME ?= $(APP_NAME)
+
 all: fmt vet build
 
 .PHONY: build

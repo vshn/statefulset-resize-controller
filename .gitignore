@@ -11,6 +11,7 @@ __debug_bin*
 *.dylib
 bin
 testbin/*
+statefulset-resize-controller
 
 # Test binary, build with `go test -c`
 *.test

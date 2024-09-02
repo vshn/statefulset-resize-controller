@@ -3,47 +3,90 @@ name: Release
 on:
   push:
     tags:
-    - "*"
+      - "*"
+
+env:
+  APP_NAME: statefulset-resize-controller
+  PUSH_UPBOUND: "False"
+  PUSH_PACKAGE: "False"
+  PUSH_IMAGE: "True"
+  SUFFIX: ""
 
 jobs:
   dist:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
-    - name: Determine Go version from go.mod
-      run: echo "GO_VERSION=$(grep "go 1." go.mod | cut -d " " -f 2)" >> $GITHUB_ENV
-    - uses: actions/setup-go@v2
-      with:
-        go-version: ${{ env.GO_VERSION }}
-    - uses: actions/cache@v2
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-    - name: Login to Quay.io
-      uses: docker/login-action@v1
-      with:
-        registry: quay.io
-        username: ${{ secrets.QUAY_IO_USER }}
-        password: ${{ secrets.QUAY_IO_TOKEN }}
-    - name: Build changelog from PRs with labels
-      id: build_changelog
-      uses: mikepenz/release-changelog-builder-action@v2
-      with:
-        configuration: ".github/changelog-configuration.json"
-        # PreReleases still get a changelog, but the next full release gets a diff since the last full release,
-        # combining possible changelogs of all previous PreReleases in between. PreReleases show a partial changelog
-        # since last PreRelease.
-        ignorePreReleases: "${{ !contains(github.ref, '-rc') }}"
-        outputFile: .github/release-notes.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: Publish releases
-      uses: goreleaser/goreleaser-action@v2
-      with:
-        args: release --release-notes .github/release-notes.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Go version from go.mod
+        run: echo "GO_VERSION=$(grep "go 1." go.mod | cut -d " " -f 2)" >> $GITHUB_ENV
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push docker image
+        if: env.PUSH_IMAGE == 'true'
+        run: make docker-push -e IMG_TAG=${GITHUB_REF##*/} -e APP_NAME=${{ env.APP_NAME }}
+
+      - name: Build and push function package
+        if: env.PUSH_PACKAGE == 'true'
+        run: make package-push -e IMG_TAG=${GITHUB_REF##*/} -e APP_NAME=${{ env.APP_NAME }}
+
+      - name: Login to Upbound
+        if: env.PUSH_UPBOUND == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: xpkg.upbound.io
+          username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
+          password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
+
+      - name: Build branch and push package to upbound
+        if: env.PUSH_UPBOUND == 'true' && env.PUSH_PACKAGE == 'true'
+        run: make package-push -e IMG_TAG=${GITHUB_REF##*/} -e APP_NAME=${{ env.APP_NAME }} -e IMG_REPO=xpkg.upbound.io
+
+      - name: Build changelog from PRs with labels
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v5
+        with:
+          configuration: ".github/changelog-configuration.json"
+          # PreReleases still get a changelog, but the next full release gets a diff since the last full release,
+          # combining possible changelogs of all previous PreReleases in between. PreReleases show a partial changelog
+          # since last PreRelease.
+          ignorePreReleases: "${{ !contains(github.ref, '-rc') }}"
+          outputFile: .github/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish releases
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          args: release --release-notes .github/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONTAINER_REGISTRY: ghcr.io
+          IMAGE_NAME: ${{ github.repository }}${{ env.SUFFIX }}
+
