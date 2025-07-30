@@ -1,10 +1,11 @@
 {
   "template": "https://github.com/vshn/appcat-cookiecutter",
-  "commit": "5309ae05edb3c118e23e64e8ec0bed2b6768ac86",
+  "commit": "69411951bb5ca1ff063313896b252d274ec50c16",
   "checkout": null,
   "context": {
     "cookiecutter": {
       "app_name": "statefulset-resize-controller",
+      "appcat_repo": "vshn/appcat",
       "component_repo": "vshn/component-appcat",
       "push_upbound": false,
       "push_package": false,
@@ -13,7 +14,8 @@
         ".github/workflows/cruft-update.yml",
         ".github/changelog-configuration.json"
       ],
-      "_template": "https://github.com/vshn/appcat-cookiecutter"
+      "_template": "https://github.com/vshn/appcat-cookiecutter",
+      "_commit": "69411951bb5ca1ff063313896b252d274ec50c16"
     }
   },
   "directory": null
